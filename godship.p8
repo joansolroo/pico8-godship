@@ -222,14 +222,14 @@ function update_player()
 				character.speed_x = 0
 			end
 
-			if(is_grounded(character)) then
+			if(character.speed_y > 0) then
+				character.state = state_falling
+			elseif(is_grounded(character)) then
 				if(btn(button_left) or btn(button_right)) then
 					character.state = state_walk
 				else
 					character.state = state_idle
 				end
-			elseif(character.speed_y > 0) then
-				character.state = state_falling
 			end
 
 		-- FALLING STATE
