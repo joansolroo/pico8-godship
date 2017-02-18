@@ -38,7 +38,14 @@ anim_falling = {17,18}
 gravity = 1
 max_body_speed = 4
 jump_speed = -6
-walk_speed = 2
+walk_speed = 1.5
+colision_margin = 1
+
+-- type
+type_thing = 0
+type_body  = 1
+type_unit  = 2
+type_player= 3
 
 -- keep track of number of instance created from start
 instance_counter = 0
@@ -68,16 +75,17 @@ end
 -- init player : machine state / physics / ...
 function init_player()
 	-- add player
-	player = new_unit(0, 0, 1, 1)
+	player = new_unit(7*8, 14*8, 1, 1)
 	player.djump_available = true
 	players[players_counter] = player
 	players_counter += 1
+	player.type = type_player
+
 	player.animations[state_idle] = anim_idle
 	player.animations[state_walk] = anim_walk
 	player.animations[state_jump] = anim_jump
 	player.animations[state_djump] = anim_djump
 	player.animations[state_falling] = anim_falling
-
 end
 
 
@@ -87,6 +95,8 @@ function new_unit(x,y,w,h)
 	unit.state = state_idle
 	unit.previous_state = state_idle
 	unit.state_time = 0
+
+	unit.type = type_unit
 
 	unit.animations = {}
 	return unit
@@ -103,8 +113,7 @@ function new_body(x,y,w,h)
 	body.speed_x = 0
 	body.speed_y = 0
 
-	body.grounded= true
-	body.usegravity = true
+	body.type = type_body
 
 	physics[body.id] = body
 	return body
@@ -114,6 +123,7 @@ function new_thing()
 	local thing = {}
 	thing.id = instance_counter
 	instance_counter += 1
+	thing.type = type_thing
 	return thing
 end
 
@@ -124,10 +134,10 @@ end
 -- ************************************************************************ updates functions ************************************************************************
 function _update()
 	global_time += 1
-
+	
+	update_controller()
 	update_physics()
 	update_player()
-	update_controller()
 end
 
 function update_physics()
@@ -135,26 +145,63 @@ function update_physics()
 		body.speed_y += gravity
 		body.speed_y = min(body.speed_y, max_body_speed)
 		
-		if(is_grounded(body) and body.speed_y >= 0) then
-			-- stop falling and replace sprite position
+		-- update colision on y axis
+		if(is_solid_horizontal_check(body.position_x, body.position_y + 8*body.size_y, 8 * body.size_x) and body.speed_y >= 0) then
 			body.speed_y = 0
-			body.position_y = (flr(body.position_y / 8) + body.size_y - 1) * 8
+			body.position_y = (flr(body.position_y / 8) - body.size_y + 1) * 8
+		elseif(is_solid_horizontal_check(body.position_x, body.position_y - 9, 8 * body.size_x) and body.speed_y <= jump_speed + gravity) then
+			body.speed_y = max(body.speed_y, jump_speed + gravity)
+			body.position_y = (flr(body.position_y / 8)) * 8
+		elseif(is_solid_horizontal_check(body.position_x, body.position_y - 1, 8 * body.size_x) and body.speed_y < 0) then
+			body.speed_y = 0
+			body.position_y = (flr(body.position_y / 8)) * 8
+		else
+			body.position_y += body.speed_y			
 		end
 
-		-- move body
-		body.position_x += body.speed_x
-		body.position_y += body.speed_y
+
+		-- update colision on x axis
+		if(is_solid_vertical_check(body.position_x - 1, body.position_y, 8 * body.size_y) and body.speed_x < 0) then
+			body.speed_x = 0
+		elseif(is_solid_vertical_check(body.position_x + 8, body.position_y, 8 * body.size_y) and body.speed_x > 0) then
+			body.speed_x = 0
+		else
+			body.position_x += body.speed_x	
+		end
+	end
+end
+
+function is_solid_horizontal_check(x,y,length)
+	for i = colision_margin, length - colision_margin - 1 do
+		local sprite_id = mget(flr((x + i) / 8), flr(y / 8))
+		if(fget(sprite_id, flag_solid)) then
+			return true
+		end
 	end
 end
 
 function is_grounded(body)
-	ground = mget(flr((body.position_x + 8 * body.size_x / 2) / 8), flr((body.position_y + 8 * body.size_y) / 8))
-	return fget(ground, flag_solid)
+	return is_solid_horizontal_check(body.position_x, body.position_y + 8*body.size_y, 8 * body.size_x)
+end
+
+function is_roofed(body)
+	return is_solid_horizontal_check(body.position_x, body.position_y - 1, 8 * body.size_x)
+end
+
+function is_solid_vertical_check(x,y,length)
+	for i = colision_margin, length - colision_margin - 1 do
+		local sprite_id = mget(flr(x / 8), flr((y + i) / 8))
+		if(fget(sprite_id, flag_solid)) then
+			return true
+		end
+	end
 end
 
 function update_player()
 	for id,character in pairs(players) do
 		-- players movement machine state
+		character.state_time += 1
+
 		-- idle state
 		if(character.state == state_idle) then
 			character.speed_x = 0
@@ -163,10 +210,13 @@ function update_player()
 
 			if(btn(button_left) or btn(button_right)) then
 				character.state = state_walk
+				character.state_time = 0
 			elseif(not is_grounded(character)) then
 				character.state = state_falling
+				character.state_time = 0
 			elseif(btn(button_jump)) then
 				character.state = state_jump
+				character.state_time = 0
 			end
 
 		-- walk state
@@ -182,10 +232,13 @@ function update_player()
 
 			if(btn(button_jump)) then
 				character.state = state_jump
+				character.state_time = 0
 			elseif(not is_grounded(character)) then
 				character.state = state_falling
+				character.state_time = 0
 			elseif(not btn(button_left) and not btn(button_right)) then
 				character.state = state_idle
+				character.state_time = 0
 			end
 
 		-- jump state
@@ -203,17 +256,23 @@ function update_player()
 				character.speed_x = 0
 			end
 
-			if(is_grounded(character)) then
-				if(btn(button_left) or btn(button_right)) then
-					character.state = state_walk
-				else
-					character.state = state_idle
-				end
+			--if(is_grounded(character)) then
+			--	if(btn(button_left) or btn(button_right)) then
+			--		character.state = state_walk
+			--	else
+			--		character.state = state_idle
+			--	end
+			--	character.state_time = 0
+			--else
+			if(is_roofed(character)) then
+				character.state = state_falling
+				character.state_time = 0
 			elseif(btn_down(button_jump) and character.djump_available) then
 				character.state = state_djump
-				character.djump_available = false
+				character.state_time = 0
 			elseif(character.speed_y > 0) then
 				character.state = state_falling
+				character.state_time = 0
 			end
 
 		-- double jump state
@@ -226,6 +285,7 @@ function update_player()
 				end
 			end
 			character.previous_state = state_djump
+			character.djump_available = false
 
 			if(btn(button_left)) then
 				character.speed_x = -walk_speed
@@ -235,14 +295,19 @@ function update_player()
 				character.speed_x = 0
 			end
 
-			if(character.speed_y > 0) then
+			if(is_roofed(character)) then
 				character.state = state_falling
-			elseif(is_grounded(character)) then
-				if(btn(button_left) or btn(button_right)) then
-					character.state = state_walk
-				else
-					character.state = state_idle
-				end
+				character.state_time = 0
+			elseif(character.speed_y > 0) then
+				character.state = state_falling
+				character.state_time = 0
+			--elseif(is_grounded(character)) then
+			--	if(btn(button_left) or btn(button_right)) then
+			--		character.state = state_walk
+			--	else
+			--		character.state = state_idle
+			--	end
+			--	character.state_time = 0
 			end
 
 		-- falling state
@@ -258,14 +323,17 @@ function update_player()
 			end
 
 			if(is_grounded(character)) then
-				if(btn(button_left) or btn(button_right)) then
+				if(btn(button_jump)) then
+					character.state = state_jump
+				elseif(btn(button_left) or btn(button_right)) then
 					character.state = state_walk
 				else
 					character.state = state_idle
 				end
+				character.state_time = 0
 			elseif(btn_down(button_jump) and character.djump_available) then
 				character.state = state_djump
-				character.djump_available = false
+				character.state_time = 0
 			end
 		end
 	end
@@ -274,9 +342,16 @@ end
 -- ************************************************************************ draw functions ************************************************************************
 function _draw()
 	cls()
-	mapdraw(0, 0, 0, 0, 300, 300)
-	camera(player.position_x - 64, player.position_y - 64)
+	mapdraw(0, 0, 0, 0, 128, 48)
+	camposx = mid(player.position_x - 64, 0, 960)
+	camposy = mid(player.position_y - 64, 0, 320)
+	camera(camposx, camposy)
 	draw_unit(player)
+
+	print(fget(mget(flr((player.position_x + (8 * player.size_x - 1) / 2) / 8), flr((player.position_y + 8) / 8))), player.position_x, player.position_y + 8)
+	print(fget(mget(flr((player.position_x + (8 * player.size_x - 1) / 2) / 8), flr((player.position_y - 1) / 8))), player.position_x, player.position_y - 8)
+	print(fget(mget(flr((player.position_x + (8 * player.size_x - 1) / 2) / 8), flr((player.position_y - 9) / 8))), player.position_x, player.position_y - 16)
+	--print(is_solid_2top(player), player.position_x, player.position_y - 8)
 end
 
 function draw_unit(unit)
@@ -297,6 +372,7 @@ end
 function btn_down(button)
 	return not button_previous[button] and btn(button)
 end
+
 __gfx__
 80000008000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000088888000000007788778000000
 08000080000000000000000000000000000000000000000000000000000000000000000000000000000008888800000000077887778800000072827777800000
@@ -428,7 +504,7 @@ bbbaaaaabbb7aaaa0000000000000000000000000505550504405500000000005555555500000000
 3bbbbbbb899800000000000000000000000000000000000000000000000000000000000000000000aaaaa8890000000000000000003000000303b00030003000
 
 __gff__
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000002020202000002020202000000000000000000000000020000020000000000000000000000000200000200000000000000000000000002020202000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000002020202000002020202000000000202000000000000020202020000000200000000000000000202020200000000000000000000000002020202000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __map__
 7070707070707070707070707070705668777877787778777877787778777867687877787778777877787778777867006877787778777877787778777877786700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -437,11 +513,11 @@ __map__
 7070707000000000707070707070705668414142006263636363636365a80056590062636500003100000053550066006900000000007365536365740000005600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 7070000000007070707070707070706659006c6d000053636372636500b80066690063720040414141414200650076777940414200000000007400310000006600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000070707070007000007070005669007c7d000000505100730000000076790073000000000000000000000000000000000000464749000000404200005600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-4f5d707070f0f0f0000000000000f066584748474849006061000000006b0000000000004648474748474849000000000000000000560059000000000000006600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-4f4e707070f0f0f0f0f0f0f0f0f0f05600000000005847484900004041484748474847485700000000000058474847474847484748576a59000000310045005600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-4f4e707070f0f0f0f0f0f000f0f0006668787778777877785900f5f676670000687778777877787778777877787778676877787778777879004041420074005600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-4f4e707000f0f0f00000f0f00000f056690000c9c8c9c9c84042000000660000590000004400000000440000000000566900000000000000000000000000006600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-004f5d00ea00f000000000f0000000665900005245457575004042003156006a690000626345754445634575000000665900004445754555754544004042005600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4f5d7070707070700000000000007066584748474849006061000000006b0000000000004648474748474849000000000000000000560059000000000000006600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4f4e707070707070707070707070705600000000005847484900004041484748474847485700000000000058474847474847484748576a59000000310045005600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4f4e707070707070707070007070006668787778777877785900f5f676670000687778777877787778777877787778676877787778777879004041420074005600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4f4e7070007070700000707000007056690000c9c8c9c9c84042000000660000590000004400000000440000000000566900000000000000000000000000006600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+004f5d00ea00700000000070000000665900005245457575004042003156006a690000626345754445634575000000665900004445754555754544004042005600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 004f4eeaeaea0000000000000000005669005263636363635500000040417767590052636363636363636363550000566900626363636363727265000000006600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 004f4eeaeaea4b4c4b4c4b4c00000076790062637272636365007b0000000056690062636363636363657365000000665900626363657473003100000044005600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 004f4eeaeaea5b5b5b5b5b5b4d000044430073746c6d73740040414141414141790000737272737273000000003000566900627250510000404141420073006600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
