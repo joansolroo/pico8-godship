@@ -129,7 +129,7 @@ function _update()
 			-- update all physics
 			updatePhysics(player, 1.0/step)
 			for unit in all(unitList) do
-				-- updatePhysics(unit, 1.0/step)
+				updatePhysics(unit, 1.0/step)
 			end
 
 			-- update all collisions
@@ -186,21 +186,18 @@ function _draw()
 		drawPopUp()
 	end
 
-
-	--print(player.speedY, player.positionX, player.positionY - 8)
-	--print(player.speedX, player.positionX, player.positionY - 12)
-	--cls()
-	--debugController()
+	--print(player.state, player.positionX, player.positionY - 8)
 end
 
 
 
--- ************************************************************************ action functions ************************************************************************
+-- ************************************************************************ player functions ************************************************************************
 -- initialize the player special unit
 function initializePlayer()
 	player = newUnit(7*8, 14*8, 1, 1, unit_type_player)
 	player.healthPoint = 10
 	player.pose = 0
+	player.djumpAvailable = true
 	player.visible = true
 
 	-- attach animation
@@ -226,26 +223,88 @@ function resetPlayer()
 	player.visible = true
 end
 
-
 -- the player state machine
 function updatePlayerState()
-	if (controllerButtonDown(button_jump)) then
-		player.speedY = -5
+	-- begin
+	local pstate = player.state
+	player.stateTime += 1
+	player.speedX = 0
+
+	-- idle
+	if(player.state == unit_state_idle) then
+		player.traversable = false
+		player.djumpAvailable = true
+		if (controllerButtonIsPressed(button_right) or controllerButtonIsPressed(button_left)) then player.state = unit_state_walk
+		elseif (controllerButtonDown(button_jump)) then
+			player.speedY = -5
+			player.state = unit_state_jump
+		end
+
+	-- walk
+	elseif(player.state == unit_state_walk) then
+		player.traversable = false
+		player.djumpAvailable = true
+		if (controllerButtonIsPressed(button_right)) then player.speedX = 1.7
+		elseif (controllerButtonIsPressed(button_left)) then player.speedX = -1.7 end
+		if (controllerButtonDown(button_jump)) then
+			player.speedY = -5
+			player.state = unit_state_jump
+		end
+		if (not controllerButtonIsPressed(button_right) and not controllerButtonIsPressed(button_left) and not controllerButtonDown(button_jump)) then player.state = unit_state_idle end
+
+	-- jump
+	elseif(player.state == unit_state_jump) then
+		player.traversable = true
+		if (controllerButtonIsPressed(button_right)) then player.speedX = 1.7
+		elseif (controllerButtonIsPressed(button_left)) then player.speedX = -1.7 end
+		if (controllerButtonDown(button_jump) and player.djumpAvailable) then
+			player.speedY = -5
+			player.state = unit_state_djump
+			player.djumpAvailable = false
+		end
+
+	-- double jump
+	elseif(player.state == unit_state_djump) then
+		player.traversable = true
+		if (controllerButtonIsPressed(button_right)) then player.speedX = 1.7
+		elseif (controllerButtonIsPressed(button_left)) then player.speedX = -1.7
+		end
+
+	-- falling
+	elseif(player.state == unit_state_falling) then
+		player.traversable = false
+		if (controllerButtonIsPressed(button_right)) then player.speedX = 1.7
+		elseif (controllerButtonIsPressed(button_left)) then player.speedX = -1.7 end
+		if (controllerButtonDown(button_jump) and player.djumpAvailable) then
+			player.speedY = -5
+			player.state = unit_state_djump
+			player.djumpAvailable = false
+		elseif (player.speedY >= 0) then
+			player.state = unit_state_idle
+		end
 	end
 
-	if (controllerButtonIsPressed(button_right)) then
-		player.speedX = 1.7
-	elseif (controllerButtonIsPressed(button_left)) then
-		player.speedX = -1.7
-	else
-		player.speedX = 0
-	end
+	-- end and animation
+	if (player.state != unit_state_falling and player.speedY > 0) then player.state = unit_state_falling end
+	if (player.state != pstate) then player.stateTime = 0 end
+	if (player.speedX > 0) then player.direction = 1
+	elseif (player.speedX < 0) then player.direction = -1 end
+	player.pose = flr(player.stateTime / player.animations[player.state].time) % player.animations[player.state].frames
 end
 
 -- the player action state machine
 function updatePlayerAction()
-
+	
 end
+
+-- ************************************************************************ update functions ************************************************************************
+-- 
+
+
+
+
+
+
 
 
 -- ************************************************************************ physics functions ************************************************************************
@@ -260,18 +319,18 @@ function updatePhysics(unit, step)
 	if (_colisionMatrix[type_environement][unit.type]) then
 		-- check left and right collision with environement
 		if (unit.speedX > 0) then
-			if (checkFlag(unit.positionX + 7 + step*unit.speedX, unit.positionY + collisionThreshold, flag_solid) or
-				checkFlag(unit.positionX + 7 + step*unit.speedX, unit.positionY + 7 - collisionThreshold, flag_solid) ) then
-				-- colision
-				unit.speedX = 0
+			if (checkFlag(unit.positionX + 7 + step*unit.speedX, unit.positionY + collisionThreshold, flag_solid) or checkFlag(unit.positionX + 7 + step*unit.speedX, unit.positionY + 7 - collisionThreshold, flag_solid) ) then
+				callbackPhysicsEnvironement(unit, flag_solid, "x")
+			elseif (not unit.traversable and (checkFlag(unit.positionX + 7 + step*unit.speedX, unit.positionY + collisionThreshold, flag_traversable) or checkFlag(unit.positionX + 7 + step*unit.speedX, unit.positionY + 7 - collisionThreshold, flag_traversable) )) then
+				callbackPhysicsEnvironement(unit, flag_traversable, "x")
 			else
 				unit.positionX += step*unit.speedX
 			end
 		elseif (unit.speedX < 0) then
-			if (checkFlag(unit.positionX + step*unit.speedX, unit.positionY + collisionThreshold, flag_solid) or
-				checkFlag(unit.positionX + step*unit.speedX, unit.positionY + 7 - collisionThreshold, flag_solid) ) then
-				-- colision
-				unit.speedX = 0
+			if (checkFlag(unit.positionX + step*unit.speedX, unit.positionY + collisionThreshold, flag_solid) or checkFlag(unit.positionX + step*unit.speedX, unit.positionY + 7 - collisionThreshold, flag_solid) ) then
+				callbackPhysicsEnvironement(unit, flag_solid, "x")
+			elseif (not unit.traversable and (checkFlag(unit.positionX + step*unit.speedX, unit.positionY + collisionThreshold, flag_traversable) or checkFlag(unit.positionX + step*unit.speedX, unit.positionY + 7 - collisionThreshold, flag_traversable) )) then
+				callbackPhysicsEnvironement(unit, flag_traversable, "x")
 			else
 				unit.positionX += step*unit.speedX
 			end
@@ -279,31 +338,39 @@ function updatePhysics(unit, step)
 
 		-- check up and down collision with environement
 		if (unit.speedY > 0) then
-			if (checkFlag(unit.positionX + collisionThreshold, unit.positionY + 7 + step*unit.speedY, flag_solid) or
-				checkFlag(unit.positionX + 7 - collisionThreshold, unit.positionY + 7 + step*unit.speedY, flag_solid) ) then
-				-- colision
-				unit.speedY = 0
+			if (checkFlag(unit.positionX + collisionThreshold, unit.positionY + 7 + step*unit.speedY, flag_solid) or checkFlag(unit.positionX + 7 - collisionThreshold, unit.positionY + 7 + step*unit.speedY, flag_solid) ) then
+				callbackPhysicsEnvironement(unit, flag_solid, "y")
+			elseif (not unit.traversable and (checkFlag(unit.positionX + collisionThreshold, unit.positionY + 7 + step*unit.speedY, flag_traversable) or checkFlag(unit.positionX + 7 - collisionThreshold, unit.positionY + 7 + step*unit.speedY, flag_traversable) )) then
+				callbackPhysicsEnvironement(unit, flag_traversable, "y")
 			else
 				unit.positionY += step*unit.speedY
 			end
 		elseif (unit.speedY < 0) then
-			if (checkFlag(unit.positionX + collisionThreshold, unit.positionY + step*unit.speedY, flag_solid) or
-				checkFlag(unit.positionX + 7 - collisionThreshold, unit.positionY + step*unit.speedY, flag_solid) ) then
-				-- colision
-				unit.speedY = 0
+			if (checkFlag(unit.positionX + collisionThreshold, unit.positionY + step*unit.speedY, flag_solid) or checkFlag(unit.positionX + 7 - collisionThreshold, unit.positionY + step*unit.speedY, flag_solid) ) then
+				callbackPhysicsEnvironement(unit, flag_solid, "y")
+			elseif (not unit.traversable and (checkFlag(unit.positionX + collisionThreshold, unit.positionY + step*unit.speedY, flag_traversable) or checkFlag(unit.positionX + 7 - collisionThreshold, unit.positionY + step*unit.speedY, flag_traversable) )) then
+				callbackPhysicsEnvironement(unit, flag_traversable, "y")
 			else
 				unit.positionY += step*unit.speedY
 			end
 		end
+
 	else
 		unit.positionX += step*unit.speedX
 		unit.positionY += step*unit.speedY
 	end
 end
 
+-- environement collision callback
+function callbackPhysicsEnvironement(unit, blockFlag, colisionAxis)
+	if (colisionAxis == "x") then
+		unit.speedX = 0
+	else
+		unit.speedY = 0
+	end
+end
 
-
--- ************************************************************************ collision functions ************************************************************************
+-- ************************************************************************ inter unit collision functions ************************************************************************
 function initializeCollision()
 	_colisionMatrix = {}
 	for i = 1, 6 do
@@ -426,9 +493,12 @@ function newUnit(x, y, w, h, type)
 	unit.speedY = 0
 	unit.sizeX = w
 	unit.sizeY = h
+
 	unit.state = unit_state_idle
+	unit.stateTime = 0
 	unit.direction = 1
 	unit.gravityAfected = true
+	unit.traversable = false
 	return unit
 end
 
