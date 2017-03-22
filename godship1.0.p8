@@ -32,6 +32,13 @@ unit_type_particle           = 3
 unit_type_particle_generator = 4
 unit_type_scenario           = 5
 
+-- material flags
+flag_none   	 = 0
+flag_solid  	 = 1
+flag_traversable = 2
+flag_destructible= 3
+flag_enemy		 = 4
+
 -- rooms definition for camera placeùent
 rooms = {
 	{0,0, 16*8, 16*8, {2}},					--1
@@ -111,21 +118,32 @@ function _update()
 		--end
 
 		-- compute subframe factor for subframe physics update
-		local maxSpeed = max(player.speedX, player.speedY)
+		local maxSpeed = max(1, max(abs(player.speedX), abs(player.speedY)))
 		for unit in all(unitList) do
-			maxSpeed = max(maxSpeed, max(unit.speedX, unit.speedY))
+			maxSpeed = max(maxSpeed, max(abs(unit.speedX), abs(unit.speedY)))
 		end
-		local step = maxSpeed / flr(maxSpeed/4 + 1) -- move 4 pixel at maximum (max sub frame speed)
-		for i = 1, flr(maxSpeed/4 + 1) do
+		local step = flr(maxSpeed)
+
+		-- subframe update
+		for i = 1, step do
+			-- update all physics
+			updatePhysics(player, 1.0/step)
 			for unit in all(unitList) do
-				-- updatePhysics(unit, step)
+				-- updatePhysics(unit, 1.0/step)
 			end
+
+			-- update all collisions
 			for unit1 in all(unitList) do
+				--if (collisionCheck(player, unit1)) then
+				--	if collisionCallback(player, unit1) call this function
+				--	if interractionCallback(player, unit1) call this function
+				--end
+
 				for unit2 in all(unitList) do
 					if(unit1 == unit2) then break end -- only check with previous unit
-					--if collisionCheck(Unit, Unit2)
-					--	if collisionCallback(Unit, Unit2) call this function
-					--	if interractionCallback(Unit, Unit2) call this function
+					--if collisionCheck(unit1, unit2)
+					--	if collisionCallback(unit1, unit2) call this function
+					--	if interractionCallback(unit1, unit2) call this function
 				end
 			end
 			for unit in all(unitList) do
@@ -167,6 +185,12 @@ function _draw()
 	if (gameState == game_state_popup) then
 		drawPopUp()
 	end
+
+
+	--print(player.speedY, player.positionX, player.positionY - 8)
+	--print(player.speedX, player.positionX, player.positionY - 12)
+	--cls()
+	--debugController()
 end
 
 
@@ -174,17 +198,8 @@ end
 -- ************************************************************************ action functions ************************************************************************
 -- initialize the player special unit
 function initializePlayer()
-	-- parameters definition (micselenious)
-	player.type = unit_type_player
-	player.positionX = 0
-	player.positionY = 0
-	player.speedX = 0
-	player.speedY = 0
-	player.sizeX = 1
-	player.sizeY = 1
-	player.state = unit_state_idle
+	player = newUnit(7*8, 14*8, 1, 1, unit_type_player)
 	player.healthPoint = 10
-	player.direction = 1
 	player.pose = 0
 	player.visible = true
 
@@ -214,22 +229,76 @@ end
 
 -- the player state machine
 function updatePlayerState()
-	if(controllerButtonIsPressed(button_up)) then
-		player.positionY -= 1
-	elseif(controllerButtonIsPressed(button_down)) then
-		player.positionY += 1
+	if (controllerButtonDown(button_jump)) then
+		player.speedY = -5
 	end
 
-	if(controllerButtonIsPressed(button_right)) then
-		player.positionX += 1
-	elseif(controllerButtonIsPressed(button_left)) then
-		player.positionX -= 1
+	if (controllerButtonIsPressed(button_right)) then
+		player.speedX = 1.7
+	elseif (controllerButtonIsPressed(button_left)) then
+		player.speedX = -1.7
+	else
+		player.speedX = 0
 	end
 end
 
 -- the player action state machine
 function updatePlayerAction()
 
+end
+
+
+-- ************************************************************************ physics functions ************************************************************************
+-- move object to delta and check collision with environement
+function updatePhysics(unit, step)
+	local collisionThreshold = 1
+	local gravity = 0.5
+	if (unit.gravityAfected) then
+		unit.speedY += step*gravity
+	end
+
+	if (_colisionMatrix[type_environement][unit.type]) then
+		-- check left and right collision with environement
+		if (unit.speedX > 0) then
+			if (checkFlag(unit.positionX + 7 + step*unit.speedX, unit.positionY + collisionThreshold, flag_solid) or
+				checkFlag(unit.positionX + 7 + step*unit.speedX, unit.positionY + 7 - collisionThreshold, flag_solid) ) then
+				-- colision
+				unit.speedX = 0
+			else
+				unit.positionX += step*unit.speedX
+			end
+		elseif (unit.speedX < 0) then
+			if (checkFlag(unit.positionX + step*unit.speedX, unit.positionY + collisionThreshold, flag_solid) or
+				checkFlag(unit.positionX + step*unit.speedX, unit.positionY + 7 - collisionThreshold, flag_solid) ) then
+				-- colision
+				unit.speedX = 0
+			else
+				unit.positionX += step*unit.speedX
+			end
+		end
+
+		-- check up and down collision with environement
+		if (unit.speedY > 0) then
+			if (checkFlag(unit.positionX + collisionThreshold, unit.positionY + 7 + step*unit.speedY, flag_solid) or
+				checkFlag(unit.positionX + 7 - collisionThreshold, unit.positionY + 7 + step*unit.speedY, flag_solid) ) then
+				-- colision
+				unit.speedY = 0
+			else
+				unit.positionY += step*unit.speedY
+			end
+		elseif (unit.speedY < 0) then
+			if (checkFlag(unit.positionX + collisionThreshold, unit.positionY + step*unit.speedY, flag_solid) or
+				checkFlag(unit.positionX + 7 - collisionThreshold, unit.positionY + step*unit.speedY, flag_solid) ) then
+				-- colision
+				unit.speedY = 0
+			else
+				unit.positionY += step*unit.speedY
+			end
+		end
+	else
+		unit.positionX += step*unit.speedX
+		unit.positionY += step*unit.speedY
+	end
 end
 
 
@@ -346,6 +415,27 @@ function newAnimation(start, frames, time)
 	dummyAnim.frames = frames
 	dummyAnim.time = time
 	return dummyAnim
+end
+
+function newUnit(x, y, w, h, type)
+	local unit = {}
+	unit.type = type
+	unit.positionX = x
+	unit.positionY = y
+	unit.speedX = 0
+	unit.speedY = 0
+	unit.sizeX = w
+	unit.sizeY = h
+	unit.state = unit_state_idle
+	unit.direction = 1
+	unit.gravityAfected = true
+	return unit
+end
+
+function checkFlag(x, y, flag)
+	local sprite_id = mget(flr(x/8),flr(y/8))
+	if (fget(sprite_id, flag)) return true
+	return false
 end
 
 -- ************************************************************************ cartrige data/assets ************************************************************************
