@@ -186,7 +186,7 @@ function _draw()
 		drawPopUp()
 	end
 
-	--print(player.state, player.positionX, player.positionY - 8)
+	--print(player.speedY, player.positionX, player.positionY - 8)
 end
 
 
@@ -234,10 +234,10 @@ function updatePlayerState()
 	if(player.state == unit_state_idle) then
 		player.traversable = false
 		player.djumpAvailable = true
-		if (controllerButtonIsPressed(button_right) or controllerButtonIsPressed(button_left)) then player.state = unit_state_walk
-		elseif (controllerButtonDown(button_jump)) then
+		if (controllerButtonDown(button_jump)) then
 			player.speedY = -5
 			player.state = unit_state_jump
+		elseif (controllerButtonIsPressed(button_right) or controllerButtonIsPressed(button_left)) then player.state = unit_state_walk
 		end
 
 	-- walk
@@ -312,8 +312,15 @@ end
 function updatePhysics(unit, step)
 	local collisionThreshold = 1
 	local gravity = 0.5
+	unit.visible = true
+
+	-- aply gravity if unit is not touching ground
 	if (unit.gravityAfected) then
-		unit.speedY += step*gravity
+		if (checkFlag(unit.positionX + collisionThreshold, unit.positionY + 8, flag_solid) or checkFlag(unit.positionX + 7 - collisionThreshold, unit.positionY + 8, flag_solid) ) then
+		elseif (not unit.traversable and (checkFlag(unit.positionX + collisionThreshold, unit.positionY + 8, flag_traversable) or checkFlag(unit.positionX + 7 - collisionThreshold, unit.positionY + 8, flag_traversable) )) then
+		else
+			unit.speedY += step*gravity
+		end
 	end
 
 	if (_colisionMatrix[type_environement][unit.type]) then
@@ -353,8 +360,15 @@ function updatePhysics(unit, step)
 			else
 				unit.positionY += step*unit.speedY
 			end
-		end
 
+		-- speed null so repositionate unit in a good way to avoid overlay on y axis (repositionate on top of the nearest plateform)
+		else
+			if (checkFlag(unit.positionX + collisionThreshold, unit.positionY + 7, flag_solid) or checkFlag(unit.positionX + 7 - collisionThreshold, unit.positionY + 7, flag_solid) ) then
+				unit.positionY -= 1
+			elseif (not unit.traversable and (checkFlag(unit.positionX + collisionThreshold, unit.positionY + 7, flag_traversable) or checkFlag(unit.positionX + 7 - collisionThreshold, unit.positionY + 7, flag_traversable) )) then
+				unit.positionY -= 1
+			end
+		end
 	else
 		unit.positionX += step*unit.speedX
 		unit.positionY += step*unit.speedY
