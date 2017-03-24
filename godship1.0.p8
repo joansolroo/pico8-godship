@@ -19,6 +19,10 @@ unit_state_walk    = 2
 unit_state_jump    = 3
 unit_state_djump   = 4
 unit_state_falling = 5
+unit_state_shooting= 6
+unit_state_charging= 7
+unit_state_animated= 8
+unit_state_random  = 9
 
 -- game state constants
 game_state_playing = 0
@@ -32,6 +36,15 @@ unit_type_particle           = 3
 unit_type_particle_generator = 4
 unit_type_scenario           = 5
 
+-- standard particule generators (extention of unit type)
+generator_fire = 6
+generator_acid = 7
+
+-- ennemy type (extention of unit type)
+ennemy_walker = 8
+ennemy_jumper = 9
+ennemy_flyer  = 10
+
 -- material flags
 flag_none   	 = 0
 flag_solid  	 = 1
@@ -40,7 +53,7 @@ flag_destructible= 3
 flag_enemy		 = 4
 
 -- rooms definition for camera placement
--- room format : {posx, posy, width, height, {neighbors room, ...}, {monster, ...}}
+-- room format : {posx, posy, width, height, {neighbors room, ...}, {monster, particle generator, ...}, }
 -- monster format : {posx, posy, type, looking direction}
 rooms = {
 	{0,0, 16*8, 16*8, {2,8}, {}},                                                                                       --1
@@ -61,6 +74,14 @@ rooms = {
 	{16*8*6, 16*8*2, 16*8, 16*8, {13}, {}}                                                                              --16
 }
 
+-- player constant
+constant_jumpSpeed = -4
+constant_walkSpeed = 1.8
+constant_chargeShootTime = 60
+
+-- ennemy constant
+constant_random_behaviour = 60
+constant_walkerSpeed = 0.3
 
 
 -- ************************************************************************ global variables ************************************************************************
@@ -88,6 +109,13 @@ function _init()
 	initializePlayer()
 	initializeCollision()
 	reset()
+
+	initializeWalker(9*8, 14*8)
+
+	--placeFire(10*8, 14*8)
+	--placeFire(4*8, 14*8)
+	--placeFire(3*8, 14*8)
+	--placeAcid(9*8, 14*8)
 end
 
 function reset()
@@ -111,13 +139,12 @@ function _update()
 		updatePlayerAction()
 		--updatePlayerDammage()
 
-		-- update unit controllers and state machines
-		--for id,unit in pairs(unitList) do
-		--	unit.controllerUpdate(unit,frameCounter)
+		--for unit in all(unitList) do
+		--	unit.controller(unit)
 		--end
-		--for id,unit in pairs(unitList) do
-		--	unit.stateUpdate(unit,frameCounter)
-		--end
+		for unit in all(unitList) do
+			if (unit.update) then unit.update(unit) end
+		end
 
 		-- compute subframe factor for subframe physics update
 		local maxSpeed = max(1, max(abs(player.speedX), abs(player.speedY)))
@@ -136,16 +163,15 @@ function _update()
 
 			-- update all collisions
 			for unit1 in all(unitList) do
-				--if (collisionCheck(player, unit1)) then
-				--	if collisionCallback(player, unit1) call this function
-				--	if interractionCallback(player, unit1) call this function
-				--end
+				if (collisionCheck(player, unit1) and _colisionMatrix[player][unit1.type]) then
+					_colisionMatrix[player][unit1.type](player, unit1)
+				end
 
 				for unit2 in all(unitList) do
 					if(unit1 == unit2) then break end -- only check with previous unit
-					--if collisionCheck(unit1, unit2)
-					--	if collisionCallback(unit1, unit2) call this function
-					--	if interractionCallback(unit1, unit2) call this function
+					if (collisionCheck(unit1, unit2) and _colisionMatrix[unit1][unit2.type]) then
+						_colisionMatrix[unit1][unit2.type](unit1, unit2)
+					end
 				end
 			end
 			for unit in all(unitList) do
@@ -173,14 +199,31 @@ function _draw()
 	camera(mid(player.positionX - 64, rooms[currentRoom][1], rooms[currentRoom][1] + rooms[currentRoom][3] - 128), mid(player.positionY - 64, rooms[currentRoom][2], rooms[currentRoom][2] + rooms[currentRoom][4] - 128))
 	map(0, 0, 0, 0, 128, 48)
 
-	-- draw player base on player animation state machine
-	if (player.visible) then
-		spr(player.animations[player.state].start + player.pose, player.positionX, player.positionY, player.sizeX, player.sizeY, (player.direction < 0))
-	end
-
-	-- draw all unit
+	-- draw all unit (first due to particle under playr sprite)
 	for unit in all(unitList) do
 		drawUnit(unit)
+	end
+
+	-- draw player base on player animation state machine
+	if (player.visible) then
+		-- jetpack sprite
+		if (player.state == unit_state_djump) then
+			spr(234, player.positionX - 8*player.direction, player.positionY+3, 1, 1, (player.direction < 0))
+		end
+
+		-- player sprite based on animation state
+		spr(player.animations[player.state].start + player.pose, player.positionX, player.positionY, player.sizeX, player.sizeY, (player.direction < 0))
+		
+		-- gun charging and fire shoot sprite
+		if (player.action == unit_state_shooting) then
+			spr(253, player.positionX + player.direction*8*player.sizeX, player.positionY, 1, 1, (player.direction > 0))
+		elseif (player.action == unit_state_charging) then
+			if (frameCounter - player.shootTime > constant_chargeShootTime) then
+				line(player.positionX+3, player.positionY+3, player.positionX+4, player.positionY+3, 11)
+			elseif (frameCounter - player.shootTime > constant_chargeShootTime/2) then
+				pset(player.positionX+3, player.positionY+3, 11)
+			end
+		end
 	end
 
 	-- draw popup if needed
@@ -188,7 +231,9 @@ function _draw()
 		drawPopUp()
 	end
 
-	--print(player.speedY, player.positionX, player.positionY - 8)
+	--print(player.positionX, player.positionX, player.positionY - 12)
+	--print(player.positionY, player.positionX, player.positionY - 8)
+	--print(count(unitList), player.positionX, player.positionY - 8)
 end
 
 
@@ -196,21 +241,18 @@ end
 -- ************************************************************************ player functions ************************************************************************
 -- initialize the player special unit
 function initializePlayer()
-	player = newUnit(7*8, 14*8, 1, 1, unit_type_player)
+	player = newUnit(7*8, 14*8, 1, 1, unit_type_player, newAnimation(17, 2, 30))
 	player.healthPoint = 10
-	player.pose = 0
 	player.djumpAvailable = true
-	player.visible = true
 	player.shootTime = 0
+	player.action = unit_state_idle
 
-	-- attach animation
-	player.animations = {}
-	player.animations[unit_state_idle] = newAnimation(17, 2, 30)
-	player.animations[unit_state_dead] = newAnimation(21, 1, 5)
-	player.animations[unit_state_walk] = newAnimation(19, 2, 2)
-	player.animations[unit_state_jump] = newAnimation(21, 1, 5)
-	player.animations[unit_state_djump] = newAnimation(21, 1, 5)
-	player.animations[unit_state_falling] = newAnimation(21, 1, 5)
+	-- attach more animation
+	player.animations[unit_state_dead] = newAnimation(20, 1, 5)
+	player.animations[unit_state_walk] = newAnimation(18, 2, 2)
+	player.animations[unit_state_jump] = newAnimation(20, 1, 5)
+	player.animations[unit_state_djump] = newAnimation(20, 1, 5)
+	player.animations[unit_state_falling] = newAnimation(20, 1, 5)
 end
 
 -- reset player state
@@ -235,60 +277,74 @@ function updatePlayerState()
 
 	-- idle
 	if(player.state == unit_state_idle) then
-		player.traversable = false
 		player.djumpAvailable = true
 		if (controllerButtonDown(button_jump)) then
-			player.speedY = -5
+			player.speedY = constant_jumpSpeed
+			player.traversable = true
 			player.state = unit_state_jump
 		elseif (controllerButtonIsPressed(button_right) or controllerButtonIsPressed(button_left)) then player.state = unit_state_walk
 		end
 
 	-- walk
 	elseif(player.state == unit_state_walk) then
-		player.traversable = false
 		player.djumpAvailable = true
-		if (controllerButtonIsPressed(button_right)) then player.speedX = 1.7
-		elseif (controllerButtonIsPressed(button_left)) then player.speedX = -1.7 end
+		if (controllerButtonIsPressed(button_right)) then player.speedX = constant_walkSpeed
+		elseif (controllerButtonIsPressed(button_left)) then player.speedX = -constant_walkSpeed end
 		if (controllerButtonDown(button_jump)) then
-			player.speedY = -5
+			player.speedY = constant_jumpSpeed
+			player.traversable = true
 			player.state = unit_state_jump
 		end
-		if (not controllerButtonIsPressed(button_right) and not controllerButtonIsPressed(button_left) and not controllerButtonDown(button_jump)) then player.state = unit_state_idle end
+		if (player.state == unit_state_walk and player.speedX == 0) then player.state = unit_state_idle end
 
 	-- jump
 	elseif(player.state == unit_state_jump) then
-		player.traversable = true
-		if (controllerButtonIsPressed(button_right)) then player.speedX = 1.7
-		elseif (controllerButtonIsPressed(button_left)) then player.speedX = -1.7 end
+		if (controllerButtonIsPressed(button_right)) then player.speedX = constant_walkSpeed
+		elseif (controllerButtonIsPressed(button_left)) then player.speedX = -constant_walkSpeed end
 		if (controllerButtonDown(button_jump) and player.djumpAvailable) then
-			player.speedY = -5
+			player.speedY = constant_jumpSpeed
+			player.traversable = true
 			player.state = unit_state_djump
 			player.djumpAvailable = false
+		end
+		if (player.speedY >= 0) then
+			player.state = unit_state_falling
+			player.traversable = false
 		end
 
 	-- double jump
 	elseif(player.state == unit_state_djump) then
-		player.traversable = true
-		if (controllerButtonIsPressed(button_right)) then player.speedX = 1.7
-		elseif (controllerButtonIsPressed(button_left)) then player.speedX = -1.7
+		local smoke = initializeParticule(player.positionX, player.positionY, newAnimation(240, 1, 5), 7)
+		smoke.direction = -player.direction
+
+		if (controllerButtonIsPressed(button_right)) then player.speedX = constant_walkSpeed
+		elseif (controllerButtonIsPressed(button_left)) then player.speedX = -constant_walkSpeed
+		end
+		if (player.speedY >= 0) then
+			player.state = unit_state_falling
+			player.traversable = false
 		end
 
 	-- falling
 	elseif(player.state == unit_state_falling) then
 		player.traversable = false
-		if (controllerButtonIsPressed(button_right)) then player.speedX = 1.7
-		elseif (controllerButtonIsPressed(button_left)) then player.speedX = -1.7 end
+		if (controllerButtonIsPressed(button_right)) then player.speedX = constant_walkSpeed
+		elseif (controllerButtonIsPressed(button_left)) then player.speedX = -constant_walkSpeed end
 		if (controllerButtonDown(button_jump) and player.djumpAvailable) then
-			player.speedY = -5
+			player.speedY = constant_jumpSpeed
+			player.traversable = true
 			player.state = unit_state_djump
 			player.djumpAvailable = false
-		elseif (player.speedY >= 0) then
+		elseif (player.speedY <= 0) then
 			player.state = unit_state_idle
 		end
 	end
 
-	-- end and animation
-	if (player.state != unit_state_falling and player.speedY > 0) then player.state = unit_state_falling end
+	-- end and animation update
+	if (player.state != unit_state_falling and player.speedY > 0) then
+		player.state = unit_state_falling
+		player.traversable = false
+	end
 	if (player.state != pstate) then player.stateTime = 0 end
 	if (player.speedX > 0) then player.direction = 1
 	elseif (player.speedX < 0) then player.direction = -1 end
@@ -297,29 +353,177 @@ end
 
 -- the player action state machine
 function updatePlayerAction()
+	player.action = unit_state_idle
 	if (controllerButtonDown(button_action)) then
-		player.shootTime = 0
+		player.shootTime = controllerGetStateChangeTime(button_action)
 	elseif (controllerButtonUp(button_action)) then
-		local bullet = newUnit(player.positionX + player.direction*(8*player.sizeX -2), player.positionY, 1, 1, unit_type_particle)
-		bullet.life = 50
+		if (controllerGetStateChangeTime(button_action) - player.shootTime > constant_chargeShootTime) then
+			local bullet = initializeParticule(player.positionX + player.direction*(8*player.sizeX - 2) - player.direction*5, player.positionY, newAnimation(249, 1, 5), 50)
+			bullet.speedX = player.direction*5
+			bullet.damage = 3
+			bullet.direction = player.direction
+			bullet.gravityAfected = false
+		else
+			local bullet = initializeParticule(player.positionX + player.direction*(8*player.sizeX - 2) - player.direction*10, player.positionY, newAnimation(250, 1, 5), 50)
+			bullet.speedX = player.direction*10
+			bullet.damage = 1
+			bullet.direction = player.direction
+			bullet.gravityAfected = false
+		end
+
+		if(player.state == unit_state_idle) then
+			player.pose = 1
+			player.stateTime = 0
+		end
+		player.shootTime = 0
+		player.action = unit_state_shooting
+	elseif (controllerButtonIsPressed(button_action)) then
+		player.stateTime = 0
+		player.action = unit_state_charging
+	end
+
+	if (controllerButtonIsPressed(button_down)) then player.traversable = true end
+end
+
+
+
+-- ************************************************************************ ennemy functions ************************************************************************
+-- initialize walker ennemy
+function initializeWalker(x, y)
+	local ennemy  = newUnit(x, y, 1, 1, ennemy_walker, newAnimation(49, 2, 17))
+	ennemy.healthPoint = 1
+	ennemy.targetX = 0
+	ennemy.targetY = 0
+
+	ennemy.update = updateWalker
+
+	-- attach more animation
+	ennemy.animations[unit_state_dead] = newAnimation(49, 1, 1)
+	ennemy.animations[unit_state_walk] = newAnimation(50, 2, 7)
+	add(unitList, ennemy)
+end
+
+function updateWalker(unit)
+	local pstate = player.state
+	unit.stateTime += 1
+
+	if (unit.state == unit_state_idle) then
+		unit.speedX = 0
+		local d = distancePlayer(unit)
+		if (d <= 25 and d >= 4) then
+			unit.targetX = player.positionX
+			unit.targetY = player.positionY
+			unit.state = unit_state_walk
+		elseif(unit.stateTime > constant_random_behaviour) then
+			unit.direction = -unit.direction
+			unit.stateTime = 0
+		end
+
+	elseif (unit.state == unit_state_walk) then
+		local d = distancePlayer(unit)
+		if (d <= 25 and d >= 4) then
+			unit.targetX = player.positionX
+			unit.targetY = player.positionY
+		end
+
+		if (unit.targetX - unit.positionX < 0) then unit.speedX = -constant_walkerSpeed 
+		else unit.speedX = constant_walkerSpeed end
+		if (abs(unit.targetX - unit.positionX) < 4) then unit.state = unit_state_idle end
+	end
+
+	if (unit.state != pstate) then unit.stateTime = 0 end
+	if (unit.speedX > 0) then unit.direction = -1
+	elseif (unit.speedX < 0) then unit.direction = 1 end
+	unit.pose = flr(unit.stateTime / unit.animations[unit.state].time) % unit.animations[unit.state].frames
+end
+
+
+-- ************************************************************************ particles and particule generators functions ************************************************************************
+-- initialize particle
+function initializeParticule(x, y, idleAnimation, life)
+	local particle = newUnit(x, y, 1, 1, unit_type_particle, idleAnimation)
+	particle.life = life
+	particle.update = updateParticle
+	add(unitList, particle)
+	return particle
+end
+
+-- update function for particles
+function updateParticle(unit)
+	unit.life -= 1
+	unit.pose = flr(max(unit.life, 0) / unit.animations[unit.state].time) % unit.animations[unit.state].frames
+	if (unit.life <= 0) then
+		unit.state = unit_state_dead
 	end
 end
 
--- ************************************************************************ update functions ************************************************************************
--- 
+-- initialize particle generator
+function initializeParticuleGenerator(x, y,idleAnimation, particleAnimation, spawnTime)
+	local generator = newUnit(x, y, 1, 1, unit_type_particle_generator, idleAnimation)
 
+	-- particule related attributes
+	generator.pLife = 50
+	generator.pLifeDispertion = 0
+	generator.pAnimation = particleAnimation
+	generator.pGravity = false
+	generator.pSpeedX = 0
+	generator.pSpeedY = 0
+	generator.pPositionX = 0
+	generator.pPositionY = 0
 
+	-- spawn related attributes
+	generator.spawnTime = spawnTime
+	generator.spawnTimeDispertion = 0
+	generator.time = 0
+	generator.nextSpawnTime = 0
 
+	generator.update = updateParticleGenerator
+	add(unitList, generator)
+	return generator
+end
 
+-- update particule generator
+function updateParticleGenerator(unit)
+	if (not inCurrentRoom(unit.positionX, unit.positionY)) then return end
 
+	unit.time += 1
+	unit.pose = flr(frameCounter / unit.animations[unit.state].time) % unit.animations[unit.state].frames
 
+	if (unit.time >= unit.nextSpawnTime) then
+		local particule = initializeParticule(unit.positionX + unit.pPositionX, unit.positionY + unit.pPositionY, unit.pAnimation, unit.pLife + rnd(unit.pLifeDispertion))
+		particule.gravityAfected = unit.pGravity
+		particule.speedX = unit.pSpeedX
+		particule.speedY = unit.pSpeedY
 
+		unit.time = 0
+		unit.nextSpawnTime = unit.spawnTime - rnd(unit.spawnTimeDispertion)
+	end
+end
+
+-- place standard firework
+function placeFire(x, y)
+	local fire = initializeParticuleGenerator(x, y, newAnimation(203,2,5), newAnimation(240, 2, 10), 7)
+	fire.gravityAfected = false
+	fire.pSpeedY = -1
+	fire.pLife = 20
+	fire.pLifeDispertion = 20
+	fire.spawnTimeDispertion = 4
+end
+
+-- place standard acid block
+function placeAcid(x, y)
+	local acid = initializeParticuleGenerator(x, y, newAnimation(218,1,1), newAnimation(219, 2, 3), 80)
+	acid.gravityAfected = false
+	acid.pLife = 6
+	acid.spawnTimeDispertion = 40
+	acid.pPositionY = -8
+end
 
 -- ************************************************************************ physics functions ************************************************************************
 -- move object to delta and check collision with environement
 function updatePhysics(unit, step)
 	local collisionThreshold = 1
-	local gravity = 0.5
+	local gravity = 0.4
 	unit.visible = true
 
 	-- aply gravity if unit is not touching ground
@@ -335,17 +539,17 @@ function updatePhysics(unit, step)
 		-- check left and right collision with environement
 		if (unit.speedX > 0) then
 			if (checkFlag(unit.positionX + 7 + step*unit.speedX, unit.positionY + collisionThreshold, flag_solid) or checkFlag(unit.positionX + 7 + step*unit.speedX, unit.positionY + 7 - collisionThreshold, flag_solid) ) then
-				callbackPhysicsEnvironement(unit, flag_solid, "x")
+				_colisionMatrix[type_environement][unit.type](unit, flag_solid, "x")
 			elseif (not unit.traversable and (checkFlag(unit.positionX + 7 + step*unit.speedX, unit.positionY + collisionThreshold, flag_traversable) or checkFlag(unit.positionX + 7 + step*unit.speedX, unit.positionY + 7 - collisionThreshold, flag_traversable) )) then
-				callbackPhysicsEnvironement(unit, flag_traversable, "x")
+				_colisionMatrix[type_environement][unit.type](unit, flag_traversable, "x")
 			else
 				unit.positionX += step*unit.speedX
 			end
 		elseif (unit.speedX < 0) then
 			if (checkFlag(unit.positionX + step*unit.speedX, unit.positionY + collisionThreshold, flag_solid) or checkFlag(unit.positionX + step*unit.speedX, unit.positionY + 7 - collisionThreshold, flag_solid) ) then
-				callbackPhysicsEnvironement(unit, flag_solid, "x")
+				_colisionMatrix[type_environement][unit.type](unit, flag_solid, "x")
 			elseif (not unit.traversable and (checkFlag(unit.positionX + step*unit.speedX, unit.positionY + collisionThreshold, flag_traversable) or checkFlag(unit.positionX + step*unit.speedX, unit.positionY + 7 - collisionThreshold, flag_traversable) )) then
-				callbackPhysicsEnvironement(unit, flag_traversable, "x")
+				_colisionMatrix[type_environement][unit.type](unit, flag_traversable, "x")
 			else
 				unit.positionX += step*unit.speedX
 			end
@@ -354,17 +558,17 @@ function updatePhysics(unit, step)
 		-- check up and down collision with environement
 		if (unit.speedY > 0) then
 			if (checkFlag(unit.positionX + collisionThreshold, unit.positionY + 7 + step*unit.speedY, flag_solid) or checkFlag(unit.positionX + 7 - collisionThreshold, unit.positionY + 7 + step*unit.speedY, flag_solid) ) then
-				callbackPhysicsEnvironement(unit, flag_solid, "y")
+				_colisionMatrix[type_environement][unit.type](unit, flag_solid, "y")
 			elseif (not unit.traversable and (checkFlag(unit.positionX + collisionThreshold, unit.positionY + 7 + step*unit.speedY, flag_traversable) or checkFlag(unit.positionX + 7 - collisionThreshold, unit.positionY + 7 + step*unit.speedY, flag_traversable) )) then
-				callbackPhysicsEnvironement(unit, flag_traversable, "y")
+				_colisionMatrix[type_environement][unit.type](unit, flag_traversable, "y")
 			else
 				unit.positionY += step*unit.speedY
 			end
 		elseif (unit.speedY < 0) then
 			if (checkFlag(unit.positionX + collisionThreshold, unit.positionY + step*unit.speedY, flag_solid) or checkFlag(unit.positionX + 7 - collisionThreshold, unit.positionY + step*unit.speedY, flag_solid) ) then
-				callbackPhysicsEnvironement(unit, flag_solid, "y")
+				_colisionMatrix[type_environement][unit.type](unit, flag_solid, "y")
 			elseif (not unit.traversable and (checkFlag(unit.positionX + collisionThreshold, unit.positionY + step*unit.speedY, flag_traversable) or checkFlag(unit.positionX + 7 - collisionThreshold, unit.positionY + step*unit.speedY, flag_traversable) )) then
-				callbackPhysicsEnvironement(unit, flag_traversable, "y")
+				_colisionMatrix[type_environement][unit.type](unit, flag_traversable, "y")
 			else
 				unit.positionY += step*unit.speedY
 			end
@@ -384,7 +588,7 @@ function updatePhysics(unit, step)
 end
 
 -- environement collision callback
-function callbackPhysicsEnvironement(unit, blockFlag, colisionAxis)
+function callbackPhysicsEnvironementUnit(unit, blockFlag, colisionAxis)
 	if (colisionAxis == "x") then
 		unit.speedX = 0
 	else
@@ -392,7 +596,36 @@ function callbackPhysicsEnvironement(unit, blockFlag, colisionAxis)
 	end
 end
 
--- ************************************************************************ inter unit collision functions ************************************************************************
+function callbackPhysicsEnvironementParticule(unit, blockFlag, colisionAxis)
+	if (colisionAxis == "x") then
+		if (unit.damage > 0) then
+			if (unit.damage >= 3) then
+				if (unit.speedX > 0) then
+					if (checkFlag(unit.positionX + 8, unit.positionY + 3, flag_destructible) or checkFlag(unit.positionX + 8, unit.positionY + 7 - 3, flag_destructible) ) then
+						destroy(unit.positionX + 8, unit.positionY + 3)
+					end
+				elseif (unit.speedX < 0) then
+					if (checkFlag(unit.positionX - 1, unit.positionY + 3, flag_destructible) or checkFlag(unit.positionX - 1, unit.positionY + 7 - 3, flag_destructible) ) then
+						destroy(unit.positionX - 1, unit.positionY + 3)
+					end
+				end
+			end
+			local dead = initializeParticule(unit.positionX, unit.positionY, newAnimation(251, 5, 1), 5)
+			dead.gravityAfected = false
+			dead.direction = unit.direction
+		end
+
+		unit.speedX = 0
+		unit.life = 0
+		unit.visible = false
+	else
+		unit.speedY = 0
+	end
+end
+
+
+
+-- ************************************************************************ unit collision functions ************************************************************************
 function initializeCollision()
 	_colisionMatrix = {}
 	for i = 1, 6 do
@@ -402,9 +635,42 @@ function initializeCollision()
 		end
 	end
 
-	_colisionMatrix[type_environement][unit_type_player] = true
+	_colisionMatrix[type_environement][unit_type_player] = callbackPhysicsEnvironementUnit
+	_colisionMatrix[type_environement][unit_type_particle] = callbackPhysicsEnvironementParticule
+	_colisionMatrix[type_environement][ennemy_walker] = callbackPhysicsEnvironementUnit
+
+	_colisionMatrix[unit_type_particle][ennemy_walker] = callbackCollisionParticuleUnit
 end
 
+function collisionCheck(unit1, unit2)
+	return false
+end
+
+
+function callbackCollisionParticuleUnit(unit1, unit2)
+	-- begin
+	local particule
+	local unit
+	if(unit1.type == unit_type_particle) then
+		particule = unit1
+		unit = unit2
+	else
+		particule = unit2
+		unit = unit1
+	end
+
+	-- collision interaction
+	unit.healthPoint -= particule.damage
+	--local impact = initializeParticule(unit.positionX, unit.positionY, newAnimation(251, 5, 1), 5)
+	--	impact.gravityAfected = false
+	--	impact.direction = unit.direction
+	--end
+
+	unit.speedX = 0
+	unit.speedY = 0
+	unit.life = 0
+	unit.visible = false
+end
 
 
 
@@ -424,12 +690,15 @@ function updateRoom()
 end
 
 function drawUnit(unit)
-
+	if (unit.visible) then
+		spr(unit.animations[unit.state].start + unit.pose, unit.positionX, unit.positionY, unit.sizeX, unit.sizeY, (unit.direction < 0))
+	end
 end
 
 function drawPopUp()
 
 end
+
 
 
 -- ************************************************************************ controller functions ************************************************************************
@@ -506,7 +775,7 @@ function newAnimation(start, frames, time)
 	return dummyAnim
 end
 
-function newUnit(x, y, w, h, type)
+function newUnit(x, y, w, h, type, idleAnimation)
 	local unit = {}
 	unit.type = type
 	unit.positionX = x
@@ -515,12 +784,21 @@ function newUnit(x, y, w, h, type)
 	unit.speedY = 0
 	unit.sizeX = w
 	unit.sizeY = h
-
-	unit.state = unit_state_idle
-	unit.stateTime = 0
 	unit.direction = 1
 	unit.gravityAfected = true
 	unit.traversable = false
+
+	unit.state = unit_state_idle
+	unit.stateTime = 0
+	unit.damage = 0
+
+	unit.animations = {}
+	unit.animations[unit_state_idle] = idleAnimation
+	unit.pose = 0
+	unit.visible = true
+
+	unit.update = nil
+	unit.controller = nil
 	return unit
 end
 
@@ -528,6 +806,29 @@ function checkFlag(x, y, flag)
 	local sprite_id = mget(flr(x/8),flr(y/8))
 	if (fget(sprite_id, flag)) return true
 	return false
+end
+
+function destroy(x, y)
+	mset(flr(x/8), flr(y/8), 0)
+	local particle = initializeParticule(8*flr(x/8), 8*flr(y/8), newAnimation(205,2,5), 10)
+	particle.gravityAfected = false
+
+	if(checkFlag(x+8, y, flag_destructible)) then destroy(x+8,y) end
+	if(checkFlag(x-8, y, flag_destructible)) then destroy(x-8,y) end
+	if(checkFlag(x, y+8, flag_destructible)) then destroy(x,y+8) end
+	if(checkFlag(x, y-8, flag_destructible)) then destroy(x,y-8) end
+end
+
+function inCurrentRoom(x, y)
+	if (mid(x, rooms[currentRoom][1], rooms[currentRoom][1] + rooms[currentRoom][3]) == x) and (mid(y, rooms[currentRoom][2], rooms[currentRoom][2] + rooms[currentRoom][4]) == y) then
+		return true
+	else return false end
+end
+
+function distancePlayer(unit)
+	local x = player.positionX - unit.positionX
+	local y = player.positionY - unit.positionY
+	return sqrt(x*x + y*y)
 end
 
 -- ************************************************************************ cartrige data/assets ************************************************************************
@@ -540,14 +841,14 @@ __gfx__
 00800800000000000000000000000000000000000000000000000000000000000000000000000000000888888888888000000eeee88888880000eeeee8888000
 080000800000000000000000000000000000000000000000000000000000000000000000000000000000eeee888888800000022eee888880000022eee8888800
 800000080000000000000000000000000000000000000000000000000000000000000000000000000000022eee8888880000020eee888080000020eee8880880
-500000000999000009990000099900000999000009990000000000000000000000000000000000000000020eee88808000000202ee8880800000202ee8800008
-60000000c444c000c444c000c444c000c444c000c444c0000000000000000000000000000000000000000202ee88808000000202208880807222202208800880
-70770700ccccc000ccd66dddccd66dddccccc000ccd66ddd00000000000000000000000000000000000002022088808000002202208808800222022288878800
-90ee030accd66dddccddd46dccddd46dccd66dddccddd46d00000000000000000000000000000000000022022088088000002202208808800720022088008700
-40880b01ccddd46dcc4cdc00cc4cdc00ccddd46dcc4cd00000000000000000000000000000000000000022022088088000007200200808070000002008800000
-20220c0dcc4cdc000cccd0000cccd000cc4cdc000c00d00000000000000000000000000000000000000072002008080700000070200807000000000200080000
-000000000c0cd0000c0c00000c0c00000c0cd0000c00c00000000000000000000000000000000000000000702208870000000000200800000000000020008000
-000000000c0c00000c0c00000c0c0000c000c000c00c000000000000000000000000000000000000000000000200800000000000200800000000000000000000
+500000000999000009990000099900000999000000000000000000000000000000000000000000000000020eee88808000000202ee8880800000202ee8800008
+60000000c444c000c444c000c444c000c444c000000000000000000000000000000000000000000000000202ee88808000000202208880807222202208800880
+70770700ccccc000ccd66dddccccc000ccd66ddd0000000000000000000000000000000000000000000002022088808000002202208808800222022288878800
+90ee030accd66dddccddd46dccd66dddccddd46d0000000000000000000000000000000000000000000022022088088000002202208808800720022088008700
+40880b01ccddd46dcc4cdc00ccddd46dcc4cd0000000000000000000000000000000000000000000000022022088088000007200200808070000002008800000
+20220c0dcc4cdc000cccd000cc4cdc000c00d0000000000000000000000000000000000000000000000072002008080700000070200807000000000200080000
+000000000c0cd0000c0c00000c0cd0000c00c0000000000000000000000000000000000000000000000000702208870000000000200800000000000020008000
+000000000c0c00000c0c0000c000c000c00c00000000000000000000000000000000000000000000000000000200800000000000200800000000000000000000
 00000000000bb0008888888800000000000000000000000000000000000000000000770000770000000000000000000000000000000000000000000000000000
 0000000000bbbbbb8888888800000000000000000000000000000070000000000007887887887000000000000000000002200022220000000000007000000000
 0baaab00bbbbbbbb8088808800000000000000000000000000000777000777000087888787887000000000000000000028828828828000000000077700777700
@@ -556,14 +857,14 @@ __gfx__
 0b777b000bbbbbb08888888800000000000000000000000000088788888888000088887788888800000000000000000082888886688828220008878888888800
 0b777b00bb00b0bb888008880000000000000000000000000088887788888800008887787888828000000000000000008888e886ee8888220088887778888800
 000000000000b0008808808800000000000000000000000000888778788882200088878878880280000000000000000088887776777882800088877878888220
-000060007000070000000000070000707000070000000000808887887888002800088878888820800000000000000000888e7e777c7e7e808088878878880028
-00055600070070000700770000700700070070000000000080088878888828280080888888800280000000000000000088877c77cc7777e88008877888882828
-005bbb6007070007700700000070700707070007000000000080888888800820808020802880028800000000000000008887cccecc6cc7e80080888888800820
-055b555607060070706007700070600707060070000000000080208028800200808020802088002800000000000000000888cc208c2c67e80080208028800200
-5555b55006e8e6006e8e6000606e8e6006e8e600000000000082288020880020000820802008002000000000000000002082882080226e880082288020880020
-05bbb5006e888006e888006606e888006e8880060000000000020800200880000000208002800200000000000000000020822822802228800002080020088000
-00555000088888e088888e000088888e088888e00000000000020880020080000002008020800000000000000000000002820802082022880002088002008000
-00050000082228888222888808822288082228880000000000000080000000000000080020080000000000000000000022802882802022880000008000000000
+000060007000700000070700000000000000000000000000808887887888002800088878888820800000000000000000888e7e777c7e7e808088878878880028
+00055600070700000070700007007700000000000000000080088878888828280080888888800280000000000000000088877c77cc7777e88008877888882828
+005bbb6007070007070700707007000000000000000000000080888888800820808020802880028800000000000000008887cccecc6cc7e80080888888800820
+055b555607060070070600707060077000000000000000000080208028800200808020802088002800000000000000000888cc208c2c67e80080208028800200
+5555b55006e8e60006e8e6006e8e600000000000000000000082288020880020000820802008002000000000000000002082882080226e880082288020880020
+05bbb5006e8880066e888006e8880066000000000000000000020800200880000000208002800200000000000000000020822822802228800002080020088000
+00555000088888e0088888e088888e00000000000000000000020880020080000002008020800000000000000000000002820802082022880002088002008000
+00050000082228880822288882228888000000000000000000000080000000000000080020080000000000000000000022802882802022880000008000000000
 0222222222222222222222200222222000000000000500000022222222222222222922222222220000ccc0000e10000000000000000d000d5555556600000555
 244242422424244224242442242424420005000000555000022222292999992222299992922222200cc7ac000110000000d00000000010015555566600005055
 224944422444942424449422244494220000000005550050224299999999229924044449999922220c77acc001d10e1000100d00000011d15555556600050555
@@ -622,44 +923,44 @@ __gfx__
 00960000009e9e0000370000c5d4647596003c000034009600000000857600009500000000000000000000000000006696760000008666a6a686779700000066
 0095000000678776008594000000000000000000000000340000000000000065a686979c00041424009e000000002545572545454545550034007d6600000000
 0095009e006424000000d4b464141476950000000000349500000000006600009500000000000000000000000000006585848484847586777797000000006400
-0096000000000065000085940000000000341f1f001f1f17001f341f000000677797c50000008c9d003c7e002645454545454545450515003400006500000000
+00960000000000650000859400000000003442420042421742423442000000677797c50000008c9d003c7e002645454545454545450515003400006500000000
 0096003400349d0000d4b5b5179d9c679700003c0000003400000000006500009500000000000000000000000000006777877787778797000000000000006600
-0095000000000066000000859400000000170f0f340f0f170f0f170f34008f3f3f7fb5b45c9e9e9e9e9e9e254545454545454556340616a63400026600000000
+0095000000000066000000859400000000174242344242174242174234008f3f3f7fb5b45c9e9e9e9e9e9e254545454545454556340616a63400026600000000
 00959e5c5c5c5c9ed4b5b56417035700000000000000000000000000006600008594000000000000000000000000000000000000000000000000648474847500
 00857484748474750000000085748474747574847584747574847484748474847484748474847484748474847484848474847484748474847484747500000000
 00857484748474847484747585748474847484748474847474847484747500000085748474847484748474847484748474847484748474847484750000000000
-02222222222222222222222002222220000ccc000f0000000000000000000000d2202d2002000222000ddd000000000000000000008000000000000000000000
-2242442222424422224244222242442200c77bc000d000000000000000000000020220d0026002d0000777000000000000000080000000000000000000000000
-2242424242424242424242422242424200c77ba000d00f0000777700077700000d00d0d006a60dd000d700000000000000880800000000000000000000000000
-2d42244d2d42244d2d4224422d42244200c7baa00020d00007cc2c60077270000d0020d00060dd00007700000000800000088020000000080000000000000000
-22dd2dddd2dd2dddd2d42dd222dd2dd2000c770000d0d00f07722660072627000d0d000d000df000007d00000008280000088000208000000000000000000000
-0200200d0000200d0000200d020020d000077b00d020d0d022cc222007266220d000d000000faf00007dd0000002800000880802000002000000000000000000
-d0000d0000020000000d000000d00e00c0077c000d2020d02266622227226292000000000000f0000007d0000000000000000000000000080000000000000000
-0000000000000000000000000000000000c77c002222202022262222222726990000000000000000000700000000000000800000080200000000000000000000
-00000000000000000000000000000000000a700c55552225555500000000000055555555a02000200dd007000000000000000000000000000000000000000000
-00000000000000000000000000000000000ab00055229922222550000000002005555555000d00d000dd70000000000000000000000000000000000000000000
-00000000000000000000000000000000000ab700552999925222500000000d020555555500000200000dd000000000000ccc0c10000000000000000000000000
-00000000000000000000000000000000000cab0055229992554255000000000005555555000000000000dd00000c100000ccc100000000000000000000000000
-000000000000000000000000000000000000a70055524992524255000000000000555555000000000000dd00000ccc00011cc00000c010010000000000000000
-0000000000000000000000000000000000c0700055554442544255000000000200555555000000000000d7000001000000cc0c0000c00c000000000000000000
-0000000000000000000000000000000000007000055554554425550000000002055555550000000000ddd7000000000000c01000cc100c000000000000000000
-000000000000000000000000000000000000c0000555545544255500000000d055555555000000000dd770000000000000000000000000000000000000000000
-000000000000000001111111010101019aaaa898005554552425555000d000001111111100000000000d770000000000000aa0000007700000a77a0000000000
-000000000003b3301011111100101010a98aa89200555455542550502d0000001111111000000000000d70000000000009a77a900a7007a00900009009000090
-0003bbb303bbba730101111100010101aaa89824005555555425500000000000111111010000000000d77000000aa0000a7777a007000070a000000a00000000
-bbbaaaaabbb7aaaa101011110000101098a89224050555050440550000000000111110100000000000d7000000aa7a00a777777a700000077000000700000000
-0003bbb303bbba730101011100000101aa982242550055050042000020000000111101010000000000ddd00000a7aa00a777777a700000077000000700000000
-000000000003b3301010101100000010a892440400000500044200000d00000011101010000f000000077d00000aa0000a7777a007000070a000000a00000000
-0000000000000000010101010000000188224000000050004422000000000000110101010e0020000007dd000000000009a77a900a7007a00900009009000090
-000000000000000010101010000000009244204000005004422222200000000010101010020200f0007dd00000000000000aa0000007700000a77a0000000000
-33333333000000000101010101010101000000009aaaaa99555545a6010101010000000100089900000080900000000000000000030000000b30000000000000
-3bb3333300000000101010101010101010000000a98aa8895554596a101010110000001000098000000098900000000000000000000300000000000000000000
-3b33bb3303000000110101010101010101000000aaaa9a89555545a60101011100000101009800000000890000000000003000000b000000b000000000000000
-bb333bb300000b0011101010101010101010000098aaaa9a5554696a101011110000101000889800008988000000bb0000bbb0000bb000000000000000030000
-3bb333b30000bab0111101010101010101010000aa9aaaaa555546a60101111100010101008aa980089aa8000000bb003bbbb000b0bbb0003000000003000000
-3b33bbb300000b00111110101010101010101000aaaa8aaa0554696a101111110010101008aaaa908aaa898000000000030000000bb000000b30000000000000
-bbb3bbb30ba000001111110101010101010101008aaa9a8a555546a6011111110101010109a98a98aaa8999000000000000000003b0000000000000000b00000
-3bbbbbbb3bb30000111111101010101010101010a9aaaaa95554596a1111111110101010988aa999aaaaa8890000000000000000003000000303b00030003000
+02222222222222222222222002222220000ccc000f0000000000000000000000d2202d2002000222000000000008990000008090008000000000000000000000
+2242442222424422224244222242442200c77bc000d000000000000000000000020220d0026002d0000000000009800000009890000000000000008000000000
+2242424242424242424242422242424200c77ba000d00f0000777700077700000d00d0d006a60dd0000000000098000000008900000000000088080000000000
+2d42244d2d42244d2d4224422d42244200c7baa00020d00007cc2c60077270000d0020d00060dd00000000000088980000898800000000080008802000008000
+22dd2dddd2dd2dddd2d42dd222dd2dd2000c770000d0d00f07722660072627000d0d000d000df00000000000008aa980089aa800208000000008800000082800
+0200200d0000200d0000200d020020d000077b00d020d0d022cc222007266220d000d000000faf000000000008aaaa908aaa8980000002000088080200028000
+d0000d0000020000000d000000d00e00c0077c000d2020d02266622227226292000000000000f0000000000009a98a98aaa89990000000080000000000000000
+0000000000000000000000000000000000c77c00222220202226222222272699000000000000000000000000988aa999aaaaa889080200000080000000000000
+00000000000000000000000000000000000a700c55552225555500000000000055555555a0200020333333330000000000000000000000000000000000000000
+00000000000000000000000000000000000ab00055229922222550000000002005555555000d00d03bb333330000000000000000000000000000000000000000
+00000000000000000000000000000000000ab700552999925222500000000d0205555555000002003b33bb330000000003000000000000000ccc0c1000000000
+00000000000000000000000000000000000cab005522999255425500000000000555555500000000bb333bb30000300000000b000000000000ccc100000c1000
+000000000000000000000000000000000000a70055524992524255000000000000555555000000003bb333b3000000300000bab000c01001011cc000000ccc00
+0000000000000000000000000000000000c0700055554442544255000000000200555555000000003b33bbb30000000000000b0000c00c0000cc0c0000010000
+00000000000000000000000000000000000070000555545544255500000000020555555500000000bbb3bbb300000b000ba00000cc100c0000c0100000000000
+000000000000000000000000000000000000c0000555545544255500000000d055555555000000003bbbbbbb000300033bb30000000000000000000000000000
+000000000000000001111111010101019aaaa898005554552425555000d000001111111100000000000000000000000000a77a0000077000000aa00000000000
+00000000000000001011111100101010a98aa89200555455542550502d00000011111110000000000000000009000090090000900a7007a009a77a9000000000
+00000000000000000101111100010101aaa8982400555555542550000000000011111101000000000000700800000000a000000a070000700a7777a0000aa000
+0000000000000000101011110000101098a89224050555050440550000000000111110100000000000000790000000007000000770000007a777777a00aa7a00
+00000000000000000101011100000101aa9822425500550500420000200000001111010100000000000007a7000000007000000770000007a777777a00a7aa00
+00000000000000001010101100000010a892440400000500044200000d00000011101010000f00000000007000000000a000000a070000700a7777a0000aa000
+0000000000000000010101010000000188224000000050004422000000000000110101010e0020000000070009000090090000900a7007a009a77a9000000000
+000000000000000010101010000000009244204000005004422222200000000010101010020200f0000007000000000000a77a0000077000000aa00000000000
+00000000000000000101010101010101000000009aaaaa99555545a60101010100000001000000000000000000000000000003b0000000300000000000000000
+0000000000000000101010101010101010000000a98aa8895554596a10101011000000100003b330000000000000000000000000000030000000000000000000
+0000000000000000110101010101010101000000aaaa9a89555545a6010101110000010103bbba730003bbb3000000000000000b000000b00000030000000000
+000060000000060011101010101010101010000098aaaa9a5554696a1010111100001010bbb7aaaabbbaaaaa000030000000000000000bb000000bbb000000bb
+0000000000000000111101010101010101010000aa9aaaaa555546a6010111110001010103bbba730003bbb30000003000000003000bbb0b0003bbbb000000bb
+0000050005000000111110101010101010101000aaaa8aaa0554696a10111111001010100003b3300000000000000000000003b000000bb00000300000000000
+00000000000000001111110101010101010101008aaa9a8a555546a60111111101010101000000000000000000000b0000000000000000b30000000000000000
+0000000000000000111111101010101010101010a9aaaaa95554596a1111111110101010000000000000000000030003000b3030000003000000000000000000
 __label__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 04040004040040000404000404004000040400040400400004040004040040000404000404004000040400040400400004040004040040400000040004400404
@@ -791,8 +1092,8 @@ __label__
 00000000000004000000000000000400000000000000040000000000000004000000000000000400000000000000040000000000000004000000000000000000
 
 __gff__
-000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000202020200000202020200000000020000000000000002020202000000000a0a0000000000000202020200000000000000020000000002020202020000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004040404000000000000000000000000000000000000000000000000000000000000000010000000000000000000000010000000001000000010100000000000
+000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000202020200000202020200000000020000000000000002020202000000020a0a0000000000000202020200000000000000020000000002020202020000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004040404000000000000001010000000000000000000000000001000000000000000000010000000000000000000000000000000001002000000000000000000
 __map__
 7070707070707070707070707070705668777877787778777877787778777867687877787778777877787778777867006877787778777877787778777877786700687778777877787778777877787867687778777877787778777877787778777877787778777877787778777877787778777877786700000000000000687767
 707070707070707070707070707070565900000000c8004400c800c9c8c800565900c9c800c9c8c800c900c9c8c8666a69e7000000c800c800c80000c800c956005900c9d900c800c9000000d9c80056590000000000000000000000000043000043004300004300430000430000430043430043007677670000006877790056
@@ -800,18 +1101,18 @@ __map__
 707054000000705255704563007070566841414200626363636363636500d75659e762636500003100c5000000d7660069e77c7d00007365536365740000d756005900c3000000000000000040414177790030000000000000000000000000000000000000000000000000000000000000430000000000007667005900000056
 707054006255006254706373707000665900000000005363637263650000d76669006372d7404141414142e74c4d767779404142000000c5007400310000d766006900000000000000000000c8c9d900000043000000000000000000430000000000000000000000000000000000000000000000000000000056006900000066
 75005363636500536570536300707056690000c700000050510073000000007679e773000000c5c5c5c5004d5b5bf2f3f3f3f3f3f4464749e700d7c0c200d7566879000000000000000000000000d746490043004300000000000000000043000000000043000000000000004300000000000000000000000076777900000056
-4f5d7045557070007570007444000066584748474849006061000000006b0000000000d746484747484748495b5b5bf2f3f3f3f3f3566a59e70000000000d76659000000000000000000000000000066690043f043f043f0f0f043f0f0f0f0f0f043f0f043f0f0f043f0f0f043f04300000000000000000000005e5f00000066
+4f5d7045557070007570007444000066584748474849006061000000006b0000000000d746484747484748495b5b5bf2f3f3f3f3f3566a59e70000000000d766590000000000000000000000000000666900432443244324242443242424242424432424432424244324242443244300000000000000000000005e5f00000066
 004e70534400450063704570635455566a000000006a47484900004041484748474847485700000000000058474747474847484748576a5900000031000000566900004300000000000000000000d756694748484748474848484748484848474848474747484748474847484748474847484748474847484748474800000056
 004e7000540054545470547054736566687877787778777859e700d77667000068777877787778777877787778777867687778777877787900c0c1c2e7000056590000710000000000005c4d4b5c4d66590000000000000000000000000000000000766759000000000000000000000000000000000046576877570000000066
-004e0062650074007270540054747056690000c9c8c9c9c84042000000660000590000c8440000c90044000000c80056690000c90000c8000000000000c500666900e971c7c5004d4b4d5b5b5b5b5b56694141420040420043004042004300000000007659200000000000000000004647484748470056006957000000000056
-00725d00da000070007074007370006659e700524545757500c0c2003156006a690000626345754445634575000000665900004445754555754544d7c0c2d7566841414141424d5b5b5b5b5b5b5b5b6659000000000000000000000000000000000000565949f04343f046490000c06659000000000066005900000000004666
-00524ecaeaca0070000000000000005669e7526363636363550000d740417767590052636363636363636363550000566900626363636363727265000000d76659f3f371f3f3e25b5b5b5b5b5b43e25669474847484748474748474847484200000000667658434343465769c200005669004041414166006900000000005866
-004ff6f9cadaca00000000000000007679e762637272636365007b000000c556690062636363636363657365000000665900626363657473003100000000005669f3f343f3f3f3e25b5b5b5b5b71f37679000000000000000000000000000000000000767778777877787779000000665900000000005600590000c300000056
-4f4ff6f5f9eaea000000005c4d4b4df243f473746c6d73740040414141414141790000737272737273000000003000566900627250510000c0c1c1c2e700006659f3f3f3f3f3f3f3e25b5b5b5b71f3f400000000000000000000000000000000c0c2000000430000004300000043005669414141420066006900000000000066
-4f4ff6f5f5faf90001004d5b5b5e5b5bf2f3f4007c7d00000000000000000000000000c500c5007b00c5c500c5000066590073006061c50000e9e9e9e9c7e9565847484749f343f343e243e24647484749c500000000000000000000000000000000000000000043000000430000006659000000000079005900c0c200000056
-4f4ff6f5f5e447484748474847484748484748474847484748474847484748474748474847484748474847484748474869c0c1c24647484748474847484748570000687879e3f3f3f3f3f3f376777767584748474847484747484748474847484748474847484748474847484748475747490040414166006900000000000066
-4f4ff6f5e46877787778777877787778777877787778777877787778777877787778777877786700000000000000006a5900000056000000000000000000000068787900c900e3c0c2f3f3f3f400c9566877787778777877787778777877787778777877787778777877787778777867005900000000766759000000c3000043
-4f4ff6e45759f3f3f3f3f3f3f4c8c9c9d9c9d9d9007500c900c900000000c900000000000000767778777877786700006900c3007677787778777877787778675900c8000000000000e3f3f3f3f40066590000000000000000000000000000000000000000000000000000000000005600584900000000666900000000000056
+004e0062650074007270540054747056690000c9c8c9c9c84042000000660000590000c8440000c90044000000c85e56690000c90000c8000000000000c500666900e971c7c5004d4b4d5b5b5b5b5b56694141420040420043004042004300000000007659200000000000000000004647484748470056006957000000000056
+00725d0001000070007074007309006659e700524545757500c0c2003156006a69000062634575444563457500005e665900004445754555754544d7c0c2d7566841414141424d5b5b5b5b5b5b5b5b66590000000000000000000000000000000000005659492443432446490000c06659000000000066005900000000004666
+00524e0101010070000000000009005669e7526363636363550000d74041776759005263636363636363636355005e566900626363636363727265000000d76659f3f371f3f3e25b5b5b5b5b5b43e25669474847484748474748474847484200000000667658434343465769c200005669004041414166006900000000005866
+004f4e0101010100000909090909007679e762637272636365007b000000c55669006263636363636365736500005e665900626363657473003100000000005669f3f343f3f3f3e25b5b5b5b5b71f37679000000000000000000000000000000000000767778777877787779000000665900000000005600590000c300000056
+4f4f4e01010101000000005c4d4b4df243f473746c6d7374004041414141414179000073727273727300000000305e566900627250510000c0c1c1c2e700006659f3f3f3f3f3f3f3e25b5b5b5b71f3f400000000000000000000000000000000c0c2000000430000004300000043005669414141420066006900000000000066
+4f4ff6010101010001004d5b5b5b5b5bf2f3f4007c7d00000000000000000000000000c500c5007b00c5c500c5005e66590073006061c50000e9e9e9e9c7e9565847484749f343f343e243e24647484749c500000000000000000000000000000000000000000043000000430000006659000000000079005900c0c200000056
+4f4f4e48474747484748474847484748484748474847484748474847484748474748474847484748474847484748474869c0c1c24647484748474847484748570000687879e3f3f3f3f3f3f376777767584748474847484747484748474847484748474847484748474847484748475747490040414166006900000000000066
+4f4f4e57586877787778777877787778777877787778777877787778777877787778777877786700000000000000006a5900000056000000000000000000000068787900c900e3c0c2f3f3f3f400c9566877787778777877787778777877787778777877787778777877787778777867005900000000766759000000c3000043
+4f4f4e676859f3f3f3f3f3f3f4c8c9c9d9c9d9d9007500c900c900000000c900000000000000767778777877786700006900c3007677787778777877787778675900c8000000000000e3f3f3f3f40066590000000000000000000000000000000000000000000000000000000000005600584900000000666900000000000056
 004f4e687879f3f3f3f3f3f3f3f400e9c5c5e900526345457544756b00e90000000000000000c8c9c87500c9c876676a597b000000000000000000c80000d75669000000000000000000c0c1c2e3f45658490000000000000000000000000000000000000000000000000000000000666879584900c300565943000000004066
 00527a5b5b5bf2f3f3f3f3f3f3f3464847484748474847484748474847484748474849006c6d62636363454400c876675847484900003100000000000000d7665900000000000000c50000000000e366687900000000000000000000000000000000000000000000000000000000005659007679000000666900000000000056
 527a5b5b5b5b5bf2f3f3f3464748570068777877787778777877787778777867006a69007c7d0053636363635500c95668777841414149e9003100005cc54d56690000000000c0c1c1c200000000005659000000000000000000000000000000000000000000000000000000000000665900000000c3005659000000c3000066
