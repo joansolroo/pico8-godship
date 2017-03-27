@@ -33,8 +33,8 @@ game_state_camtransition = 3
 -- unit type enumeration and environement
 type_environement            = 1
 unit_type_player             = 2
-unit_type_particule           = 3
-unit_type_particule_generator = 4
+unit_type_particule          = 3
+unit_type_particule_generator= 4
 unit_type_scenario           = 5
 
 -- standard particule generators (extention of unit type)
@@ -61,7 +61,7 @@ rooms = {
 	{0, 0, 16*8, 16*8, {2,8}, {
 		{10*8, 14*8, 6, 1},		-- fire
 		{4*8, 14*8, 6, 1},		-- fire
-		{3*8, 14*8, 6, 1}}},	-- fire
+		{3*8, 14*8, 6, 1}}},	-- scenario shoot
 
 	-- room 2
 	{16*8, 0, 16*8, 16*8, {1,3}, {
@@ -69,7 +69,8 @@ rooms = {
 
 	-- room 3
 	{16*16, 0, 16*8, 16*8, {2,4},{
-		{39*8, 3*8, 8, 1}}},			-- walker
+		{39*8, 3*8, 8, 1},
+		{45*8, 14*8, 5, 1}}},			-- scenario shoot
 	
 	-- room 4
 	{16*24, 0, 16*8, 16*8, {3,5}, {
@@ -174,7 +175,7 @@ function _init()
 	initializeplayer()
 	initializecollision()
 	initializecamera()
-	initializeScenario()
+	initializescenario()
 	reset()
 
 	--placescenario(9*8, 14*8, 33)
@@ -188,7 +189,7 @@ function reset()
 	resetcontroller()
 	resetplayer()
 	resetroomsystem()
-	resetScenario()
+	resetscenario()
 end
 
 function _update()
@@ -331,12 +332,16 @@ end
 -- initialize the player special unit
 function initializeplayer()
 	player = newunit(7*8, 14*8, 1, 1, unit_type_player, newanimation(17, 2, 30))
-	player.healthpoint = 100
+	player.healthpoint = 3
 	player.djumpavailable = true
 	player.shoottime = 0
 	player.action = unit_state_idle
 	player.framedammage = 0
 	player.dammagetime = 0
+
+	player.shootEnable = false
+	player.djumpEnable = false
+	player.chargeshootEnable = false
 
 	-- attach more animation
 	player.animations[unit_state_dead] = newanimation(20, 1, 5)
@@ -353,12 +358,18 @@ function resetplayer()
 	player.speedx = 0
 	player.speedy = 0
 	player.state = unit_state_idle
+	player.action = unit_state_idle
 	player.healthpoint = 3
 	player.direction = 1
 	player.pose = 0
 	player.dammagetime = 0
 	player.visible = true
 	player.framedammage = 0
+	player.djumpavailable = true
+	player.shoottime = 0
+	player.shootEnable = false
+	player.djumpEnable = false
+	player.chargeshootEnable = false
 end
 
 -- the player state machine
@@ -394,7 +405,7 @@ function updateplayerstate()
 	elseif(player.state == unit_state_jump) then
 		if (controllerbuttonispressed(button_right)) then player.speedx = constant_walkspeed
 		elseif (controllerbuttonispressed(button_left)) then player.speedx = -constant_walkspeed end
-		if (controllerbuttondown(button_jump) and player.djumpavailable) then
+		if (controllerbuttondown(button_jump) and player.djumpavailable and player.djumpEnable) then
 			player.speedy = constant_jumpspeed
 			player.traversable = true
 			player.state = unit_state_djump
@@ -425,7 +436,7 @@ function updateplayerstate()
 		player.traversable = false
 		if (controllerbuttonispressed(button_right)) then player.speedx = constant_walkspeed
 		elseif (controllerbuttonispressed(button_left)) then player.speedx = -constant_walkspeed end
-		if (controllerbuttondown(button_jump) and player.djumpavailable) then
+		if (controllerbuttondown(button_jump) and player.djumpavailable and player.djumpEnable) then
 			player.speedy = constant_jumpspeed
 			player.traversable = true
 			player.state = unit_state_djump
@@ -449,10 +460,11 @@ end
 -- the player action state machine
 function updateplayeraction()
 	player.action = unit_state_idle
-	if (controllerbuttondown(button_action)) then
+	if (not player.shootEnable) then
+	elseif (controllerbuttondown(button_action)) then
 		player.shoottime = controllergetstatechangetime(button_action)
 	elseif (controllerbuttonup(button_action)) then
-		if (controllergetstatechangetime(button_action) - player.shoottime > constant_chargeshoottime) then
+		if (controllergetstatechangetime(button_action) - player.shoottime > constant_chargeshoottime and player.chargeshootEnable) then
 			local bullet = initializeparticule(player.positionx + player.direction*(8*player.sizex - 2) - player.direction*5, player.positiony+1, newanimation(249, 1, 5), 50)
 			bullet.speedx = player.direction*5
 			bullet.sizey = 0.7
@@ -725,6 +737,7 @@ end
 -- initialize particle generator
 function initializeparticulegenerator(x, y,idleanimation, particleanimation, spawntime)
 	local generator = newunit(x, y, 1, 1, unit_type_particule_generator, idleanimation)
+	generator.animations[unit_state_dead] = idleanimation
 
 	-- particule related attributes
 	generator.plife = 50
@@ -819,6 +832,17 @@ function initializeroom(room)
 		elseif (newunitlist[i][3] == ennemy_walker) then initializewalker(newunitlist[i][1], newunitlist[i][2])
 		elseif (newunitlist[i][3] == ennemy_jumper) then initializejumper(newunitlist[i][1], newunitlist[i][2])
 		elseif (newunitlist[i][3] == ennemy_flyer) then initializeflyer(newunitlist[i][1], newunitlist[i][2])
+		elseif (newunitlist[i][3] == unit_type_scenario) then
+			local found = nil
+			for powerup in all(scenario.remainingblock) do
+				if (newunitlist[i][1] == powerup[1] and newunitlist[i][2] == powerup[2]) then
+					found = powerup
+					break
+				end
+			end
+			if (found) then
+				placescenario(found[1], found[2], found[3], found[4], found[5])
+			end
 		end
 	end
 end
@@ -849,24 +873,24 @@ end
 
 -- ************************************************************************ scenario functions ************************************************************************
 -- place standard firework
-function placescenario(x, y, powerupsprite, text)
-	local block = initializeparticulegenerator(x, y, newanimation(32,1,1), newanimation(powerupsprite, 1, 1), 100)
+function placescenario(x, y, powerupsprite, text, type)
+	local block = initializeparticulegenerator(x, y, newanimation(32,1,1), newanimation(powerupsprite, 1, 1), 60)
 	block.type = unit_type_scenario
 	block.plife = block.spawntime+1
 	block.pdirection = 0
 	block.text = text
+	block.scenario = type
 end
 
 -- initialize scenario for the current game
-function initializeScenario()
+function initializescenario()
 	scenario = {}
-	scenario.text = {}
-	scenario.remainingBlock = {}
+	scenario.remainingblock = {}
 end
 
-function resetScenario()
-	for powerupposition in all(scenario.remainingBlock) do del(scenario.remainingBlock, powerupposition) end
-	--add(scenario.remainingBlock,{})
+function resetscenario()
+	for powerup in all(scenario.remainingblock) do del(scenario.remainingblock, powerup) end
+	--add(scenario.remainingblock,{45*8, 14*8, 33, {"god damn gun!","finnaly got you"}, "shoot"})
 end
 
 
@@ -993,6 +1017,7 @@ function initializecollision()
 	_colisionmatrix[type_environement][unit_type_player] = callbackphysicsenvironementunit				-- [1][2]
 	_colisionmatrix[type_environement][unit_type_particule] = callbackphysicsenvironementparticule		-- [1][3]
 	_colisionmatrix[type_environement][unit_type_particule_generator] = callbackphysicsenvironementunit	-- [1][4]
+	_colisionmatrix[type_environement][unit_type_scenario] = callbackphysicsenvironementunit			-- [1][5]
 	_colisionmatrix[type_environement][generator_fire] = callbackphysicsenvironementunit				-- [1][6]
 	_colisionmatrix[type_environement][generator_acid] = callbackphysicsenvironementunit				-- [1][7]
 	_colisionmatrix[type_environement][ennemy_walker] = callbackphysicsenvironementunit					-- [1][8]
@@ -1001,6 +1026,7 @@ function initializecollision()
 
 	_colisionmatrix[unit_type_player][unit_type_particule_generator] = callbackcollisionplayerennemy	-- [2][4]
 	_colisionmatrix[unit_type_player][generator_fire] = callbackcollisionplayerennemy					-- [2][6]
+	_colisionmatrix[unit_type_player][unit_type_scenario] = callbackcollisionplayerscenario				-- [2][5]
 	_colisionmatrix[unit_type_player][generator_acid] = callbackcollisionplayerennemy					-- [2][7]
 	_colisionmatrix[unit_type_player][ennemy_walker] = callbackcollisionplayerennemy					-- [2][8]
 	_colisionmatrix[unit_type_player][ennemy_jumper] = callbackcollisionplayerennemy					-- [2][9]
@@ -1067,7 +1093,18 @@ function callbackcollisionplayerennemy(unit1, unit2)
 	player.framedammage += unit.damage
 end
 
+function callbackcollisionplayerscenario(unit1, unit2)
+	-- begin
+	local unit
+	if(unit1.type == unit_type_player) then unit = unit2
+	else unit = unit1 end
+	unit.state = unit_state_dead
+	--del(scenario.remainingblock, {unit.positionx, unit.positiony, unit})
 
+	if (unit.scenario == "shoot") then
+		player.shootEnable = true
+	end
+end
 
 -- ************************************************************************ rendering functions ************************************************************************
 function drawunit(unit)
@@ -1518,7 +1555,7 @@ __map__
 00725d00f000000000f074007300006659e700524545757500c0c2000000566a690000626345754445634575000000665900004445754555754544d7c0c2d7566841414141424d5b5b5b5b5b5b5b5b66590000000000000000000000000000000000005659490043430046490000c06659000000000066005900000000004666
 00524e010101f100000000000000005669e7526363636363550000d740417767590052636363636363636363550000566900626363636363727265000000d76659f3f371f3f3e25b5b5b5b5b5b43e25669474847484748474748474847484200000000667658434343465769c200005669004041414166006900000000005866
 004f4e0101010100000000000000007679e762637272636365007b000000c556690062636363636363657365000000665900626363657473000000000000005669f3f343f3f3f3e25b5b5b5b5b71f37679000000000000000000000000000000000000767778777877787779000000665900000000005600590000c300000056
-4f4f4e01010101000000005c4d4b4df243f473746c6d73740040414141414141790000737272737273000000003000566900627250510000c0c1c1c2e700006659f3f3f3f3f3f3f3e25b5b5b5b71f3f400000000000000000000000000000000c0c2000000430000004300000043005669414141420066006900000000000066
+4f4f4e01010101000000005c4d4b4df243f473746c6d73740040414141414141790000737272737273000000000000566900627250510000c0c1c1c2e700006659f3f3f3f3f3f3f3e25b5b5b5b71f3f400000000000000000000000000000000c0c2000000430000004300000043005669414141420066006900000000000066
 4f4f4e010101010001004d5b5b5b5b5bf2f3f4007c7d00000000000000000000000000c500c5007b00c5c500c5000066590073006061c50000e9e9e9e9c7e9565847484749f343f343e243e24647484749c500000000000000000000000000000000000000000043000000430000006659000000000079005900c0c200000056
 4f4f4e48474747484748474847484748484748474847484748474847484748474748474847484748474847484748474869c0c1c24647484748474847484748570000687879e3f3f3f3f3f3f376777767584748474847484747484748474847484748474847484748474847484748475747490040414166006900000000000066
 4f4f4e57586877787778777877787778777877787778777877787778777877787778777877786700000000000000006a5900000056000000000000000000000068787900c900e3c0c2f3f3f3f400c9566877787778777877787778777877787778777877787778777877787778777867005900000000766759000000c3000043
