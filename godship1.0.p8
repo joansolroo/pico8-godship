@@ -28,6 +28,7 @@ unit_state_random  = 9
 game_state_playing = 0
 game_state_popup   = 1
 game_state_end     = 2
+game_state_camtransition = 3
 
 -- unit type enumeration and environement
 type_environement            = 1
@@ -78,21 +79,51 @@ rooms = {
 
 	-- room 5
 	{16*8*3, 16*8, 16*8, 16*8, {4,6,9}, {
-		{54*8, 19*8, 8, 1},				-- walker
 		{57*8, 20*8, 8, 1},				-- walker
 		{50*8, 22*8, 8, 1},				-- walker
 		{58*8, 27*8, 9, 1}}},			-- jumper
-	{16*16, 16*8, 16*8, 16*8, {5,7}, {}},
 
 	-- room 6
+	{16*16, 16*8, 16*8, 16*8, {5,7}, {}},
+
+	-- room 7
 	{16*8, 16*8, 16*8, 16*8, {6,8}, {
 		{35*8, 20*8, 8, 1}}},			-- walker
 
+	-- room 8
 	{0, 16*8, 16*8, 16*8, {7, 1}, {}},
+
+	-- room 9
 	{16*8*4, 0, 16*8, 16*8*3, {5,10,12,15}, {}},
-	{16*8*2, 16*8*2, 16*8*2, 16*8, {9,11}, {}},
-	{0, 16*8*2, 16*8*2, 16*8, {10}, {}},
-	{16*8*5, 0, 16*8*2, 16*8, {9,13}, {}},
+
+	-- room 10
+	{16*8*2, 16*8*2, 16*8*2, 16*8, {9,11},{}},
+
+	-- room 11
+	{0, 16*8*2, 16*8*2, 16*8, {10}, {
+		{18*8, 46*8, 7, 1},
+		{19*8, 46*8, 7, 1},
+		{21*8, 46*8, 7, 1},
+		{22*8, 46*8, 7, 1},
+		{24*8, 46*8, 7, 1},
+		{25*8, 46*8, 7, 1},
+		{27*8, 46*8, 7, 1} }},
+
+	-- room 12
+	{16*8*5, 0, 16*8*2, 16*8, {9,13}, {
+		{83*8, 6*8, 7, 1}, {85*8, 6*8, 7, 1},
+		{87*8, 6*8, 7, 1}, {88*8, 6*8, 7, 1},
+		{89*8, 6*8, 7, 1}, {91*8, 6*8, 7, 1},
+		{92*8, 6*8, 7, 1}, {93*8, 6*8, 7, 1},
+		{94*8, 6*8, 7, 1}, {95*8, 6*8, 7, 1},
+		{96*8, 6*8, 7, 1}, {98*8, 6*8, 7, 1},
+		{99*8, 6*8, 7, 1}, {101*8, 6*8, 7, 1},
+		{102*8, 6*8, 7, 1},{103*8, 6*8, 7, 1},
+		{105*8, 6*8, 7, 1},{106*8, 6*8, 7, 1},
+		{107*8, 6*8, 7, 1},{109*8, 6*8, 7, 1},
+		{85*8, 6*8, 7, 1}	}},
+
+
 	{16*8*7, 0, 16*8, 16*8*3, {12,14,16}, {}},
 	{16*8*6, 16*8, 16*8, 16*8, {13,15}, {}},
 	{16*8*5, 16*8, 16*8, 16*8*2, {14,9}, {}},
@@ -126,11 +157,13 @@ player = {}
 
 -- all the unit present in the game
 unitlist = {}
-unitcounter = 0
 tmpunitlist = {}
 
 -- current room of the player unit
 currentroom = 1
+
+-- camera
+cam = {}
 
 
 
@@ -139,11 +172,12 @@ function _init()
 	initializecontroller()
 	initializeplayer()
 	initializecollision()
+	initializecamera()
 	reset()
 
-	placeScenario(9*8, 14*8, 33)
-	placeScenario(11*8, 14*8, 34)
-	placeScenario(13*8, 14*8, 35)
+	--placeScenario(9*8, 14*8, 33)
+	--placeScenario(11*8, 14*8, 34)
+	--placeScenario(13*8, 14*8, 35)
 end
 
 function reset()
@@ -218,15 +252,24 @@ function _update()
 			gamestate = game_state_playing
 		end
 
+	-- move only camera
+	elseif (gamestate == game_state_camtransition) then
+		if (cam.x == cam.targetx and cam.y == cam.targety) then
+			gamestate = game_state_playing
+			for unit in all(tmpunitlist) do del(tmpunitlist, unit) end
+		end
+
 	-- game finished !
 	elseif (gamestate == game_state_end) then
 	end
+
+	updatecameraposition()
 end
 
 function _draw()
 	-- clear screen, place camera, and draw background
 	cls()
-	camera(mid(player.positionx - 64, rooms[currentroom][1], rooms[currentroom][1] + rooms[currentroom][3] - 128), mid(player.positiony - 64, rooms[currentroom][2], rooms[currentroom][2] + rooms[currentroom][4] - 128))
+	camera(cam.x, cam.y)
 	map(0, 0, 0, 0, 128, 48)
 
 	-- draw all unit (first due to particle under player sprite)
@@ -273,8 +316,8 @@ function _draw()
 		drawpopup()
 	end
 
-	--print(flr((player.positionx+4)/8), player.positionx, player.positiony - 12)
-	--print(flr((player.positiony+4)/8), player.positionx, player.positiony - 6)
+	print(flr((player.positionx+4)/8), player.positionx, player.positiony - 12)
+	print(flr((player.positiony+4)/8), player.positionx, player.positiony - 6)
 
 	--print(count(unitlist), player.positionx, player.positiony - 6)
 end
@@ -407,8 +450,9 @@ function updateplayeraction()
 		player.shoottime = controllergetstatechangetime(button_action)
 	elseif (controllerbuttonup(button_action)) then
 		if (controllergetstatechangetime(button_action) - player.shoottime > constant_chargeshoottime) then
-			local bullet = initializeparticule(player.positionx + player.direction*(8*player.sizex - 2) - player.direction*5, player.positiony, newanimation(249, 1, 5), 50)
+			local bullet = initializeparticule(player.positionx + player.direction*(8*player.sizex - 2) - player.direction*5, player.positiony+1, newanimation(249, 1, 5), 50)
 			bullet.speedx = player.direction*5
+			bullet.sizey = 0.7
 			bullet.damage = 3
 			bullet.direction = player.direction
 			bullet.gravityafected = false
@@ -416,6 +460,7 @@ function updateplayeraction()
 		else
 			local bullet = initializeparticule(player.positionx + player.direction*(8*player.sizex - 2) - player.direction*10, player.positiony, newanimation(250, 1, 5), 50)
 			bullet.speedx = player.direction*10
+			bullet.sizey = 0.7
 			bullet.damage = 1
 			bullet.direction = player.direction
 			bullet.gravityafected = false
@@ -440,9 +485,16 @@ end
 function updateplayerdammage()
 	if (player.dammagetime == 0) then
 		if (player.framedammage > 0) then
-			player.healthpoint -= 1
+			--player.healthpoint -= 1
 			player.dammagetime += 1
 			player.visible = false
+
+			local impact = initializeparticule(player.positionx, player.positiony, newanimation(221, 3, 3), 9)
+			impact.pose = 3
+			impact.speedx = player.speedx
+			impact.speedy = player.speedy
+			impact.environementafected = false
+			impact.gravityafected = true
 		end
 	elseif (player.dammagetime >= constant_invulnerabilitytime) then
 		player.dammagetime = 0
@@ -455,6 +507,8 @@ function updateplayerdammage()
 	player.framedammage = 0
 	if (player.healthpoint <= 0) then player.state = unit_state_dead end
 end
+
+
 
 -- ************************************************************************ ennemy functions ************************************************************************
 -- initialize walker ennemy
@@ -478,7 +532,7 @@ end
 
 function controllerwalker(unit)
 	local d = distance(unit, player)
-	if (d <= 32 and d >= 4) then
+	if (d <= 40 and d >= 4) then
 		unit.targetx = player.positionx
 		unit.targety = player.positiony
 		unit.targetdistance = d
@@ -504,8 +558,11 @@ function updatewalker(unit)
 	else unit.speedx = 0 end
 
 	-- avoid falling from plateform
-	if (unit.speedx > 0 and not checkflag(unit.positionx + 7 + unit.speedx, unit.positiony + 8, flag_solid)) then unit.speedx = 0
-	elseif (unit.speedx < 0 and not checkflag(unit.positionx - unit.speedx, unit.positiony + 8, flag_solid)) then unit.speedx = 0 end
+	if (unit.speedx > 0 and not checkflag(unit.positionx + 7 + unit.speedx, unit.positiony + 8, flag_solid) and not checkflag(unit.positionx + 7 + unit.speedx, unit.positiony + 8, flag_traversable)) then
+		unit.speedx = 0
+	elseif (unit.speedx < 0 and not checkflag(unit.positionx - unit.speedx, unit.positiony + 8, flag_solid) and not checkflag(unit.positionx - unit.speedx, unit.positiony + 8, flag_traversable)) then
+		unit.speedx = 0
+	end
 
 	-- compute state
 	if (abs(unit.speedx) > 0) then unit.state = unit_state_walk
@@ -539,15 +596,15 @@ end
 
 function controllerjumper(unit)
 	local d = distance(unit, player)
-	if (d <= 30 and d >= 4) then
+	if (d <= 40 and d >= 4) then
 		unit.targetx = player.positionx
 		unit.targety = player.positiony
 		unit.targetdistance = d
 	elseif (unit.statetime > constant_random_behaviour) then
-		--unit.targetx = unit.positionx - 16 + rnd(32)
-		--unit.targety = unit.positiony
-		--unit.targetdistance = abs(unit.targetx - unit.positionx)
-		--unit.statetime = 0
+		unit.targetx = unit.positionx - 16 + rnd(32)
+		unit.targety = unit.positiony
+		unit.targetdistance = abs(unit.targetx - unit.positionx)
+		unit.statetime = 0
 	end
 end
 
@@ -650,14 +707,17 @@ function updateflyer(unit)
 	unit.pose = flr(unit.statetime / unit.animations[unit.state].time) % unit.animations[unit.state].frames
 end
 
+
+
 -- ************************************************************************ particles and particule generators functions ************************************************************************
 -- initialize particle
 function initializeparticule(x, y, idleanimation, life)
-	local particle = newunit(x, y, 1, 1, unit_type_particule, idleanimation)
-	particle.life = life
-	particle.update = updateparticle
-	add(unitlist, particle)
-	return particle
+	local particule = newunit(x, y, 1, 1, unit_type_particule, idleanimation)
+	particule.life = life
+	particule.update = updateparticle
+	particule.environementafected = true
+	add(unitlist, particule)
+	return particule
 end
 
 -- update function for particles
@@ -728,19 +788,27 @@ function placefire(x, y)
 	fire.spawntimedispertion = 4
 	fire.damage = 1
 	fire.pdirection = 0
-	fire.time = rnd(15)
+
+	fire.pose = rnd(1)
+	fire.time = rnd(fire.spawntime)
+	fire.nextspawntime = rnd(fire.spawntime) + rnd(fire.spawntimedispertion)
 end
 
 -- place standard acid block
 function placeacid(x, y)
-	local acid = initializeparticulegenerator(x, y, newanimation(224,2,20), newanimation(219, 2, 3), 80)
+	local acid = initializeparticulegenerator(x, y, newanimation(224,2,20), newanimation(219, 2, 3), 100)
 	acid.gravityafected = false
 	acid.plife = 6
 	acid.spawntimedispertion = 40
 	acid.ppositiony = -8
 	acid.damage = 1
-	acid.time = rnd(80)
+
+	acid.pose = rnd(1)
+	acid.time = rnd(acid.spawntime)
+	acid.nextspawntime = rnd(acid.spawntime) + rnd(acid.spawntimedispertion)
 end
+
+
 
 -- ************************************************************************ room system functions ************************************************************************
 function resetRoomsystem()
@@ -777,9 +845,13 @@ function updateroom()
 		-- swap tmpunitlist and unitlist
 		tmpunitlist, unitlist = unitlist, tmpunitlist
 		initializeRoom(currentroom)
-		for unit in all(tmpunitlist) do del(tmpunitlist, unit) end
+		gamestate = game_state_camtransition
+
+		cam.targetx = mid(player.positionx - 64, rooms[currentroom][1], rooms[currentroom][1] + rooms[currentroom][3] - 128)
+		cam.targety = mid(player.positiony - 64, rooms[currentroom][2], rooms[currentroom][2] + rooms[currentroom][4] - 128)
 	end
 end
+
 
 
 -- ************************************************************************ scenario functions ************************************************************************
@@ -789,6 +861,7 @@ function placeScenario(x, y, powerUpSprite)
 	block.plife = block.spawntime+1
 	block.pdirection = 0
 end
+
 
 
 -- ************************************************************************ physics functions ************************************************************************
@@ -873,7 +946,7 @@ function callbackphysicsenvironementunit(unit, blockflag, colisionaxis)
 end
 
 function callbackphysicsenvironementparticule(unit, blockflag, colisionaxis)
-	if (colisionaxis == "x") then
+	if (colisionaxis == "x" and unit.environementafected) then
 		if (unit.damage > 0) then
 			if (unit.damage >= 3) then
 				if (unit.speedx > 0) then
@@ -962,8 +1035,9 @@ function callbackcollisionparticuleunit(unit1, unit2)
 
 	-- collision interaction
 	if (particule.life > 0 and particule.damage > 0) then
-		local impact = initializeparticule(particule.positionx + 0.2*particule.speedx, particule.positiony + 0.2*particule.speedy, newanimation(205, 3, 3), 9)
+		local impact = initializeparticule(unit.positionx + unit.sizex*4 - 4 + 0.2*particule.speedx, unit.positiony + unit.sizey*4 - 4 + 0.2*particule.speedy, newanimation(205, 3, 3), 9)
 			impact.pose = 3
+			impact.environementafected = false
 			impact.speedx = particule.direction * 0.8
 			impact.gravityafected = false
 			impact.direction = particule.direction
@@ -987,15 +1061,44 @@ function callbackcollisionplayerennemy(unit1, unit2)
 	player.framedammage += unit.damage
 end
 
+
+
 -- ************************************************************************ rendering functions ************************************************************************
 function drawunit(unit)
 	if (unit.visible) then
-		spr(unit.animations[unit.state].start + unit.pose*unit.sizex, unit.positionx, unit.positiony, unit.sizex, unit.sizey, (unit.direction < 0))
+		local sx = flr(unit.sizex + 0.5)
+		local sy = flr(unit.sizey + 0.5)
+		spr(unit.animations[unit.state].start + unit.pose*sx, unit.positionx, unit.positiony, sx, sy, (unit.direction < 0))
 	end
 end
 
 function drawpopup()
+end
 
+function initializecamera()
+	cam.x = 0
+	cam.y = 0
+	cam.targetx = 0
+	cam.targety = 0
+	cam.speed = 5.0
+end
+
+function updatecameraposition()
+	if (gamestate == game_state_camtransition) then
+		local dx = cam.targetx - cam.x
+		local dy = cam.targety - cam.y
+		local d = sqrt(dx*dx + dy*dy)
+		if(d < cam.speed) then
+			cam.x = cam.targetx
+			cam.y = cam.targety
+		else
+			cam.x += cam.speed * dx / d
+			cam.y += cam.speed * dy / d
+		end
+	else
+		cam.x = mid(player.positionx - 64, rooms[currentroom][1], rooms[currentroom][1] + rooms[currentroom][3] - 128)
+		cam.y = mid(player.positiony - 64, rooms[currentroom][2], rooms[currentroom][2] + rooms[currentroom][4] - 128)
+	end
 end
 
 
@@ -1129,6 +1232,8 @@ function distance(unit1, unit2)
 	local y = unit1.positiony - unit2.positiony
 	return sqrt(x*x + y*y)
 end
+
+
 
 -- ************************************************************************ cartrige data/assets ************************************************************************
 __gfx__
