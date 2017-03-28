@@ -133,7 +133,7 @@ rooms = {
 -- scenario definition
 scenario = {
 	-- {sprite, picked, {text for popup in line array}, optionnal string}
-	{33, false, {"god damn gun !","finnaly got you !", "*.....*.....*.....*"}, "shoot"},
+	{33, false, {"god damn gun !","finnaly got you !"}, "shoot"},
 	{34, false, {"ha! my jetpack,","could be useful in a","place like this."}, "djump"},
 	{33, false, {"nice!, this experimental","gun can be charged for","more dammage!"}, "cshoot"}
 }
@@ -196,7 +196,7 @@ function reset()
 	resetroomsystem()
 	resetscenario()
 
-	setplayerposition(40*8, 14*8)
+	setplayerposition(7*8, 14*8)
 end
 
 function _update()
@@ -242,6 +242,7 @@ function _update()
 					_colisionmatrix[unit_type_player][unit1.type](player, unit1)
 				end
 
+				if (abs(unit1.speedx) > 0 or abs(unit1.speedy) > 0)
 				for unit2 in all(unitlist) do
 					if(unit1 == unit2) then break end -- only check with previous unit
 					if (collisioncheck(unit1, unit2) and _colisionmatrix[unit1.type][unit2.type]) then
@@ -531,7 +532,7 @@ end
 function updateplayerdammage()
 	if (player.dammagetime == 0) then
 		if (player.framedammage > 0) then
-			--player.healthpoint -= 1
+			player.healthpoint -= 1
 			player.dammagetime += 1
 			player.visible = false
 
@@ -611,10 +612,10 @@ end
 
 
 
-
+-- initialize jumper ennemy
 function initializejumper(x, y)
 	local ennemy  = newunit(x, y, 2, 2, ennemy_jumper, newanimation(10, 2, 20))
-	ennemy.healthpoint = 20
+	ennemy.healthpoint = 3
 	ennemy.targetx = x
 	ennemy.targety = y
 	ennemy.targetdistance = 0
@@ -678,7 +679,7 @@ end
 
 
 
-
+-- initialize flyer ennemy
 function initializeflyer(x, y)
 	local ennemy  = newunit(x, y, 2, 2, ennemy_jumper, newanimation(44, 2, 20))
 	ennemy.healthpoint = 3
@@ -766,35 +767,34 @@ function updateparticle(unit)
 end
 
 -- initialize particle generator
+-- positionate a lot of parameter in default value (to keep an initialize function small)
 function initializeparticulegenerator(x, y,idleanimation, particleanimation, spawntime)
 	local generator = newunit(x, y, 1, 1, unit_type_particule_generator, idleanimation)
-	generator.animations[unit_state_dead] = idleanimation
 
-	-- particule related attributes
+	-- modifiable attribute to twick to create a full customized particule generator
 	generator.plife = 50
 	generator.plifedispertion = 0
-	generator.panimation = particleanimation
-	generator.pgravity = false
-	generator.pspeedx = 0
-	generator.pspeedy = 0
-	generator.ppositionx = 0
-	generator.ppositiony = 0
-	generator.pdamage = 0
-	generator.pdirection = 1
+	generator.panimation = particleanimation	-- particule idle animation
+	generator.pgravity = false 					-- particule are affected by gravity
+	generator.pspeedx = 0						-- particule initial speed on x axis
+	generator.pspeedy = 0						-- particule initial speed on y axis
+	generator.ppositionx = 0					-- particule initial position on x axis
+	generator.ppositiony = 0					-- particule initial position on y axis
+	generator.pdamage = 0						-- particule dammage
+	generator.pdirection = 1					-- particule initial direction. zero mean that the particule direction is random
+	generator.spawntime = spawntime 			-- spawn interval time
+	generator.spawntimedispertion = 0			-- random interval for spawn time
 
-	-- spawn related attributes
-	generator.spawntime = spawntime
-	generator.spawntimedispertion = 0
+	-- machine state related attributes
 	generator.time = 0
 	generator.nextspawntime = 0
-
-	generator.update = updateparticlegenerator
+	generator.update = updateparticulegenerator
 	add(unitlist, generator)
 	return generator
 end
 
 -- update particule generator
-function updateparticlegenerator(unit)
+function updateparticulegenerator(unit)
 	unit.time += 1
 	unit.pose = flr(unit.time / unit.animations[unit.state].time) % unit.animations[unit.state].frames
 
@@ -813,7 +813,7 @@ function updateparticlegenerator(unit)
 	end
 end
 
--- place standard firework
+-- place standard firework (generate some smoke)
 function placefire(x, y)
 	local fire = initializeparticulegenerator(x, y, newanimation(203,2,5), newanimation(240, 2, 10), 15)
 	fire.gravityafected = false
@@ -829,7 +829,7 @@ function placefire(x, y)
 	fire.nextspawntime = rnd(fire.spawntime) + rnd(fire.spawntimedispertion)
 end
 
--- place standard acid block
+-- place standard acid block (generate some buble)
 function placeacid(x, y)
 	local acid = initializeparticulegenerator(x, y, newanimation(224,2,20), newanimation(219, 2, 3), 100)
 	acid.gravityafected = false
@@ -846,6 +846,7 @@ end
 
 
 -- ************************************************************************ room system functions ************************************************************************
+-- reset room system
 function resetroomsystem()
 	for unit in all(unitlist) do del(unitlist, unit) end
 	for unit in all(tmpunitlist) do del(tmpunitlist, unit) end
@@ -853,6 +854,7 @@ function resetroomsystem()
 	initializeroom(currentroom)
 end
 
+-- initialize room : place unit of correct type to correct position depending of the room structure
 function initializeroom(room)
 	newunitlist = rooms[room][6]
 	for i = 1, count(newunitlist) do
@@ -870,6 +872,7 @@ function initializeroom(room)
 	end
 end
 
+-- update current room depending on player position
 function updateroom()
 	if (mid(player.positionx, rooms[currentroom][1], rooms[currentroom][1] + rooms[currentroom][3]) == player.positionx) and (mid(player.positiony, rooms[currentroom][2], rooms[currentroom][2] + rooms[currentroom][4]) == player.positiony) then
 		return
@@ -895,7 +898,8 @@ end
 
 
 -- ************************************************************************ scenario functions ************************************************************************
--- place standard firework
+-- place a scenario block (a chest with a sprite floating on top)
+-- has to reference a index on scenario table to have acces to additionnal parameter
 function placescenario(x, y, sprite, index)
 	local block = initializeparticulegenerator(x, y, newanimation(32,1,1), newanimation(sprite, 1, 1), 60)
 	block.type = unit_type_scenario
@@ -905,6 +909,7 @@ function placescenario(x, y, sprite, index)
 end
 
 -- initialize scenario for the current game
+-- all scenario item referenced by the scenario table are positionate as unpicked
 function resetscenario()
 	for item in all(scenario) do
 		item[2] = false
@@ -986,7 +991,7 @@ function updatephysics(unit, step)
 	end
 end
 
--- environement collision callback
+-- environement collision callbacks
 function callbackphysicsenvironementunit(unit, blockflag, colisionaxis)
 	if (colisionaxis == "x") then
 		unit.speedx = 0
@@ -994,7 +999,6 @@ function callbackphysicsenvironementunit(unit, blockflag, colisionaxis)
 		unit.speedy = 0
 	end
 end
-
 function callbackphysicsenvironementparticule(unit, blockflag, colisionaxis)
 	if (colisionaxis == "x" and unit.environementafected) then
 		if (unit.damage > 0) then
@@ -1025,6 +1029,7 @@ end
 
 
 -- ************************************************************************ unit collision functions ************************************************************************
+-- initialize collision callbacks matrix
 function initializecollision()
 	_colisionmatrix = {}
 	for i = 1, 11 do
@@ -1064,6 +1069,7 @@ function initializecollision()
 	end
 end
 
+-- check if two unit currently collide (overlap)
 function collisioncheck(unit1, unit2)
 	if ( abs(unit1.positionx + 4*unit1.sizex - (unit2.positionx + 4*unit2.sizex)) < 4*(unit1.sizex + unit2.sizex) - 1 ) then
 		if ( abs(unit1.positiony + 4*unit1.sizey - (unit2.positiony + 4*unit2.sizey)) < 4*(unit1.sizey + unit2.sizey) - 1 ) then
@@ -1073,6 +1079,7 @@ function collisioncheck(unit1, unit2)
 	return false
 end
 
+-- units collision callbacks
 function callbackcollisionparticuleunit(unit1, unit2)
 	-- begin
 	local particule
@@ -1104,7 +1111,6 @@ function callbackcollisionparticuleunit(unit1, unit2)
 		end
 	end
 end
-
 function callbackcollisionplayerennemy(unit1, unit2)
 	-- begin
 	local unit
@@ -1112,7 +1118,6 @@ function callbackcollisionplayerennemy(unit1, unit2)
 	else unit = unit1 end
 	player.framedammage += unit.damage
 end
-
 function callbackcollisionplayerscenario(unit1, unit2)
 	-- begin
 	local unit
@@ -1261,28 +1266,29 @@ end
 
 function newunit(x, y, w, h, type, idleanimation)
 	local unit = {}
-	unit.type = type
-	unit.positionx = x
-	unit.positiony = y
-	unit.speedx = 0
-	unit.speedy = 0
-	unit.sizex = w
-	unit.sizey = h
-	unit.direction = 1
-	unit.gravityafected = true
-	unit.traversable = false
+	unit.type = type 									-- unit type (see at file beginig to see full type list)
+	unit.positionx = x 									-- unit position on x axis
+	unit.positiony = y 									-- unit position on y axis
+	unit.speedx = 0										-- unit speed on x axis (could be positif or negatif)
+	unit.speedy = 0										-- unit speed on y axis (could be positif or negatif)
+	unit.sizex = w 										-- unit size on x axis (scale is in tile (8 pixel))
+	unit.sizey = h 										-- unit size on y axis (scale is in tile (8 pixel))
+	unit.direction = 1									-- unit direction. default is 1. if you want to flip unit on x axis direction is equals to -1
+	unit.gravityafected = true							-- define if unit is afected by gravity
+	unit.traversable = false 							-- define if unit can cross traversable plateform
 
-	unit.state = unit_state_idle
-	unit.statetime = 0
-	unit.damage = 0
+	unit.state = unit_state_idle 						-- unit state
+	unit.statetime = 0									-- state time elapsed since the unit change its state
+	unit.damage = 0										-- unit dammage (dammage given to the player)
 
-	unit.animations = {}
-	unit.animations[unit_state_idle] = idleanimation
-	unit.pose = 0
-	unit.visible = true
+	unit.animations = {}								-- animations list
+	unit.animations[unit_state_idle] = idleanimation	-- define idle animation
+	unit.animations[unit_state_dead] = idleanimation	-- define dead animation. can be changed if you want (but define in "construcor" since it could cause a crash)
+	unit.pose = 0										-- used for animation state
+	unit.visible = true									-- unit is visible (or not!)
 
-	unit.update = nil
-	unit.controller = nil
+	unit.update = nil 									-- unit update function (machine state)
+	unit.controller = nil 								-- unit behaviour (IA)
 	return unit
 end
 
