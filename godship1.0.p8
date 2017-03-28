@@ -55,7 +55,7 @@ flag_enemy		 = 4
 
 -- rooms definition for camera placement
 -- room format : {posx, posy, width, height, {neighbors room, ...}, {monster, particle generator, ...}, }
--- unit format : {posx, posy, type, looking direction}
+-- unit format : {posx, posy, type, optionnal (looking direction, ...)}
 rooms = {
 	-- room 1
 	{0, 0, 16*8, 16*8, {2,8}, {
@@ -69,13 +69,13 @@ rooms = {
 
 	-- room 3
 	{16*16, 0, 16*8, 16*8, {2,4},{
-		{39*8, 3*8, 8, 1},
+		{39*8, 3*8, 8, 1},				-- walker
 		{45*8, 14*8, 5, 1}}},			-- scenario shoot
 	
 	-- room 4
 	{16*24, 0, 16*8, 16*8, {3,5}, {
 		{59*8, 4*8, 8, 1},				-- walker
-		{59*8, 7*8, 8, 1},
+		{59*8, 7*8, 8, 1},				-- walker
 		{57*8, 12*8, 8, 1}}},			-- walker
 
 	-- room 5
@@ -96,40 +96,46 @@ rooms = {
 	{0, 16*8, 16*8, 16*8, {7, 1}, {}},
 
 	-- room 9
-	{16*8*4, 0, 16*8, 16*8*3, {5,10,12,15}, {}},
+	{16*8*4, 0, 16*8, 16*8*3, {5,10,12,15}, {
+		{77*8, 46*8, 5, 3} }},			-- scenario charged shoot
 
 	-- room 10
 	{16*8*2, 16*8*2, 16*8*2, 16*8, {9,11},{}},
 
 	-- room 11
 	{0, 16*8*2, 16*8*2, 16*8, {10}, {
-		{18*8, 46*8, 7, 1},
-		{19*8, 46*8, 7, 1},
-		{21*8, 46*8, 7, 1},
-		{22*8, 46*8, 7, 1},
-		{24*8, 46*8, 7, 1},
-		{25*8, 46*8, 7, 1},
-		{27*8, 46*8, 7, 1} }},
+		{18*8, 46*8, 7, 1},	{19*8, 46*8, 7, 1},		-- acid
+		{21*8, 46*8, 7, 1}, {22*8, 46*8, 7, 1},		-- acid
+		{24*8, 46*8, 7, 1}, {25*8, 46*8, 7, 1},		-- acid
+		{27*8, 46*8, 7, 1},							-- acid
+		{29*8, 38*8, 5, 2} }},						-- scenario double jump
 
 	-- room 12
 	{16*8*5, 0, 16*8*2, 16*8, {9,13}, {
-		{83*8, 6*8, 7, 1}, {85*8, 6*8, 7, 1},
-		{87*8, 6*8, 7, 1}, {88*8, 6*8, 7, 1},
-		{89*8, 6*8, 7, 1}, {91*8, 6*8, 7, 1},
-		{92*8, 6*8, 7, 1}, {93*8, 6*8, 7, 1},
-		{94*8, 6*8, 7, 1}, {95*8, 6*8, 7, 1},
-		{96*8, 6*8, 7, 1}, {98*8, 6*8, 7, 1},
-		{99*8, 6*8, 7, 1}, {101*8, 6*8, 7, 1},
-		{102*8, 6*8, 7, 1},{103*8, 6*8, 7, 1},
-		{105*8, 6*8, 7, 1},{106*8, 6*8, 7, 1},
-		{107*8, 6*8, 7, 1},{109*8, 6*8, 7, 1},
+		{83*8, 6*8, 7, 1}, {85*8, 6*8, 7, 1},		-- acid
+		{87*8, 6*8, 7, 1}, {88*8, 6*8, 7, 1},		-- acid
+		{89*8, 6*8, 7, 1}, {91*8, 6*8, 7, 1},		-- acid
+		{92*8, 6*8, 7, 1}, {93*8, 6*8, 7, 1},		-- acid
+		{94*8, 6*8, 7, 1}, {95*8, 6*8, 7, 1},		-- acid
+		{96*8, 6*8, 7, 1}, {98*8, 6*8, 7, 1},		-- acid
+		{99*8, 6*8, 7, 1}, {101*8, 6*8, 7, 1},		-- acid
+		{102*8, 6*8, 7, 1},{103*8, 6*8, 7, 1},		-- acid
+		{105*8, 6*8, 7, 1},{106*8, 6*8, 7, 1},		-- acid
+		{107*8, 6*8, 7, 1},{109*8, 6*8, 7, 1},		-- acid
 		{85*8, 6*8, 7, 1}	}},
-
 
 	{16*8*7, 0, 16*8, 16*8*3, {12,14,16}, {}},
 	{16*8*6, 16*8, 16*8, 16*8, {13,15}, {}},
 	{16*8*5, 16*8, 16*8, 16*8*2, {14,9}, {}},
 	{16*8*6, 16*8*2, 16*8, 16*8, {13}, {}}
+}
+
+-- scenario definition
+scenario = {
+	-- {sprite, picked, {text for popup in line array}, optionnal string}
+	{33, false, {"god damn gun !","finnaly got you !", "*.....*.....*.....*"}, "shoot"},
+	{34, false, {"ha! my jetpack,","could be useful in a","place like this."}, "djump"},
+	{33, false, {"nice!, this experimental","gun can be charged for","more dammage!"}, "cshoot"}
 }
 
 -- player constant
@@ -175,7 +181,6 @@ function _init()
 	initializeplayer()
 	initializecollision()
 	initializecamera()
-	initializescenario()
 	reset()
 
 	--placescenario(9*8, 14*8, 33)
@@ -190,6 +195,8 @@ function reset()
 	resetplayer()
 	resetroomsystem()
 	resetscenario()
+
+	setplayerposition(40*8, 14*8)
 end
 
 function _update()
@@ -252,8 +259,10 @@ function _update()
 
 	-- game in popup mode
 	elseif (gamestate == game_state_popup) then
+		updatecontroller(framecounter)
 		if (controllerbuttonup(button_action)) then
 			gamestate = game_state_playing
+			for line in all(cam.popuptext) do del(cam.popuptext, line) end
 		end
 
 	-- move only camera
@@ -367,9 +376,31 @@ function resetplayer()
 	player.framedammage = 0
 	player.djumpavailable = true
 	player.shoottime = 0
+
 	player.shootEnable = false
 	player.djumpEnable = false
 	player.chargeshootEnable = false
+end
+
+function setplayerposition(x, y)
+	player.positionx = x
+	player.positiony = y
+
+	local found = false
+	for i = 1, 16 do -- check all room
+		if (inroom(x, y, i)) then
+			currentroom = i
+			found = true
+			break
+		end
+	end
+	if (not found) then
+		player.positionx = 7*8
+		player.positiony = 14*8
+		currentroom = 1
+	end
+	updatecameraposition()
+	initializeroom(currentroom)
 end
 
 -- the player state machine
@@ -559,9 +590,9 @@ function controllerwalker(unit)
 		unit.direction = -unit.direction
 
 	-- avoid exit room
-	elseif (unit.speedx > 0 and not incurrentroom(unit.positionx + 8, unit.positiony + 7)) then
+	elseif (unit.speedx > 0 and not inroom(unit.positionx + 8, unit.positiony + 7, currentroom)) then
 		unit.direction = -unit.direction
-	elseif (unit.speedx < 0 and not incurrentroom(unit.positionx - 1, unit.positiony + 7)) then
+	elseif (unit.speedx < 0 and not inroom(unit.positionx - 1, unit.positiony + 7, currentroom)) then
 		unit.direction = -unit.direction
 	end
 end
@@ -764,8 +795,6 @@ end
 
 -- update particule generator
 function updateparticlegenerator(unit)
-	if (not incurrentroom(unit.positionx, unit.positiony)) then return end
-
 	unit.time += 1
 	unit.pose = flr(unit.time / unit.animations[unit.state].time) % unit.animations[unit.state].frames
 
@@ -833,15 +862,9 @@ function initializeroom(room)
 		elseif (newunitlist[i][3] == ennemy_jumper) then initializejumper(newunitlist[i][1], newunitlist[i][2])
 		elseif (newunitlist[i][3] == ennemy_flyer) then initializeflyer(newunitlist[i][1], newunitlist[i][2])
 		elseif (newunitlist[i][3] == unit_type_scenario) then
-			local found = nil
-			for powerup in all(scenario.remainingblock) do
-				if (newunitlist[i][1] == powerup[1] and newunitlist[i][2] == powerup[2]) then
-					found = powerup
-					break
-				end
-			end
-			if (found) then
-				placescenario(found[1], found[2], found[3], found[4], found[5])
+			local item = scenario[newunitlist[i][4]]
+			if (item and not item[2]) then
+				placescenario(newunitlist[i][1], newunitlist[i][2], item[1], newunitlist[i][4])
 			end
 		end
 	end
@@ -873,25 +896,22 @@ end
 
 -- ************************************************************************ scenario functions ************************************************************************
 -- place standard firework
-function placescenario(x, y, powerupsprite, text, type)
-	local block = initializeparticulegenerator(x, y, newanimation(32,1,1), newanimation(powerupsprite, 1, 1), 60)
+function placescenario(x, y, sprite, index)
+	local block = initializeparticulegenerator(x, y, newanimation(32,1,1), newanimation(sprite, 1, 1), 60)
 	block.type = unit_type_scenario
 	block.plife = block.spawntime+1
 	block.pdirection = 0
-	block.text = text
-	block.scenario = type
+	block.index = index
 end
 
 -- initialize scenario for the current game
-function initializescenario()
-	scenario = {}
-	scenario.remainingblock = {}
+function resetscenario()
+	for item in all(scenario) do
+		item[2] = false
+	end
 end
 
-function resetscenario()
-	for powerup in all(scenario.remainingblock) do del(scenario.remainingblock, powerup) end
-	--add(scenario.remainingblock,{45*8, 14*8, 33, {"god damn gun!","finnaly got you"}, "shoot"})
-end
+
 
 
 -- ************************************************************************ physics functions ************************************************************************
@@ -1099,10 +1119,20 @@ function callbackcollisionplayerscenario(unit1, unit2)
 	if(unit1.type == unit_type_player) then unit = unit2
 	else unit = unit1 end
 	unit.state = unit_state_dead
-	--del(scenario.remainingblock, {unit.positionx, unit.positiony, unit})
 
-	if (unit.scenario == "shoot") then
+	local item = scenario[unit.index]
+	item[2] = true
+	if (item[4] == "shoot") then
 		player.shootEnable = true
+	elseif (item[4] == "djump") then
+		player.djumpEnable = true
+	elseif (item[4] == "cshoot") then
+		player.chargeshootEnable = true
+	end
+
+	if (count(item[3])) then
+		cam.popuptext = item[3]
+		gamestate = game_state_popup
 	end
 end
 
@@ -1116,6 +1146,14 @@ function drawunit(unit)
 end
 
 function drawpopup()
+	local w = 80
+	local h = max(30, 10*count(cam.popuptext))
+
+	rect(cam.x + 63 - w/2, cam.y + 63 - h/2, cam.x + 65 + w/2, cam.y + 65 + h/2, 12)
+	rectfill(cam.x + 64 - w/2, cam.y + 64 - h/2, cam.x + 64 + w/2, cam.y + 64 + h/2, 0)
+	for i = 1, count(cam.popuptext) do
+		print(cam.popuptext[i], cam.x + 64 - 2.0 * #cam.popuptext[i] + 1, cam.y + 60 - h/2 + 8*i, 7)
+	end
 end
 
 function initializecamera()
@@ -1124,6 +1162,7 @@ function initializecamera()
 	cam.targetx = 0
 	cam.targety = 0
 	cam.speed = 5.0
+	cam.popuptext = {}
 end
 
 function updatecameraposition()
@@ -1264,8 +1303,8 @@ function destroy(x, y)
 	if(checkflag(x, y-8, flag_destructible)) then destroy(x,y-8) end
 end
 
-function incurrentroom(x, y)
-	if (mid(x, rooms[currentroom][1], rooms[currentroom][1] + rooms[currentroom][3]) == x) and (mid(y, rooms[currentroom][2], rooms[currentroom][2] + rooms[currentroom][4]) == y) then
+function inroom(x, y, room)
+	if (mid(x, rooms[room][1], rooms[room][1] + rooms[room][3]) == x) and (mid(y, rooms[room][2], rooms[room][2] + rooms[room][4]) == y) then
 		return true
 	else return false end
 end
