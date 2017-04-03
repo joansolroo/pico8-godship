@@ -242,7 +242,7 @@ function _update()
 					_colisionmatrix[unit_type_player][unit1.type](player, unit1)
 				end
 
-				if (abs(unit1.speedx) > 0 or abs(unit1.speedy) > 0)
+				
 				for unit2 in all(unitlist) do
 					if(unit1 == unit2) then break end -- only check with previous unit
 					if (collisioncheck(unit1, unit2) and _colisionmatrix[unit1.type][unit2.type]) then
