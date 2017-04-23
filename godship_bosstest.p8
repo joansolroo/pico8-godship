@@ -2,7 +2,6 @@ pico-8 cartridge // http://www.pico-8.com
 version 8
 __lua__
 
-
 -- ************************************************************************ constant definition ************************************************************************
 -- button inputs
 button_left   = 0
@@ -55,7 +54,7 @@ flag_none   	 = 0
 flag_solid  	 = 1
 flag_traversable = 2
 flag_destructible= 3
-flag_enemy		 = 4
+flag_transmission = 4
 
 -- rooms definition for camera placement
 -- room format : {posx, posy, width, height, {neighbors room, ...}, {monster, particle generator, ...}, }
@@ -154,7 +153,7 @@ constant_invulnerabilitytime = 30
 constant_random_behaviour = 60
 constant_walkerspeed = 0.3
 constant_jumperspeedx = 1.3
-constant_jumperspeedy = 4
+constant_jumperspeedy = 5
 constant_flyerspeed = 0.5
 
 
@@ -648,7 +647,7 @@ function controllerjumper(unit)
 		unit.targetdistance = d
 	elseif (unit.statetime > constant_random_behaviour) then
 		unit.targetx = unit.positionx - 16 + rnd(32)
-		unit.targety = unit.positiony
+		unit.targety = unit.positiony - rnd(1)
 		unit.targetdistance = abs(unit.targetx - unit.positionx)
 		unit.statetime = 0
 	end
@@ -660,7 +659,7 @@ function updatejumper(unit)
 
 	if (unit.state == unit_state_idle) then
 		unit.speedx = 0
-		if (abs(unit.targetx - unit.positionx) > 4) then
+		if (abs(unit.targetx - unit.positionx) > 4 and unit.statetime >= 10) then
 			unit.state = unit_state_jump
 			unit.speedy = -constant_jumperspeedy
 		end
@@ -679,7 +678,10 @@ function updatejumper(unit)
 	end
 
 	-- end
-	if (unit.speedy < 0) then unit.traversable = true end
+	if (unit.speedy < 0) then unit.traversable = true
+	elseif (unit.speedy > 0) then unit.traversable = false end
+	if (unit.targety < unit.positiony) then unit.traversable = true end
+
 	if (unit.state != pstate) then unit.statetime = 0 end
 	if (unit.speedx > 0) then unit.direction = -1
 	elseif (unit.speedx < 0) then unit.direction = 1 end
@@ -697,6 +699,7 @@ function initializeflyer(x, y)
 	ennemy.targetdistance = 0
 	ennemy.damage = 1
 	ennemy.gravityafected = false
+	ennemy.traversable = true
 
 	-- behaviour
 	ennemy.update = updateflyer
@@ -861,11 +864,11 @@ function initializeennemygenerator(x, y, ennemytype, spawntime, ennemycount)
 	generator.ppositiony = 0
 	generator.spawntime = spawntime
 	generator.ennemycount = ennemycount
-	--generator.visible = false
+	generator.visible = false
 
 	-- machine state related attributes
 	generator.time = 0
-	generator.nextspawntime = 0
+	generator.nextspawntime = spawntime
 	generator.update = updateennemygenerator
 	add(unitlist, generator)
 	return generator
@@ -916,12 +919,6 @@ function initializeroom(room)
 	end
 
 	if (room == 16) then
-		--initializeennemygenerator(98*8,  33*8, ennemy_walker, 30, killboard.walker)
-		--initializeennemygenerator(109*8, 33*8, ennemy_walker, 30, killboard.walker)
-
-		--initializeennemygenerator(98*8,  33*8, ennemy_jumper, 30, killboard.jumper)
-		--initializeennemygenerator(109*8, 33*8, ennemy_jumper, 30, killboard.jumper)
-
 		--initializeennemygenerator(98*8,  33*8, ennemy_flyer, 30, killboard.flyer)
 		--initializeennemygenerator(109*8, 33*8, ennemy_flyer, 30, killboard.flyer)
 	end
@@ -950,14 +947,121 @@ function updateroom()
 	end
 end
 
-
+-- boss behaviour
 function updatebossroom()
+	-- close door
 	if (bossroomstate == 0) then
-		if(player.positionx >= 103*8 and player.positionx <= 105*8) then bossroomstate += 1 end
+		if (player.positionx <= 110*8) then
+			bossroomstate += 1
+			mset(111, 46, 210)
+			local transition = initializeparticule(111*8, 46*8, newanimation(210,2,5), 10)
+			transition.gravityafected = false
+		end
+
+	-- init wave 1
 	elseif (bossroomstate == 1) then
-		initializeennemygenerator(98*8,  43*8, ennemy_walker, 30, killboard.walker)
-		initializeennemygenerator(109*8, 43*8, ennemy_walker, 30, killboard.walker)
+		if (player.positionx >= 103*8 and player.positionx <= 105*8) then
+			bossroomstate += 1
+			initializeennemygenerator(98*8,  43*8, ennemy_walker, 20, killboard.walker)
+			initializeennemygenerator(109*8, 43*8, ennemy_walker, 20, killboard.walker)
+		elseif (killboard.walker == 0) then
+			bossroomstate = 3
+		end
+
+	-- wave 1
+	elseif (bossroomstate == 2) then
+		local ennemyremaining = false
+		for unit in all(unitlist) do
+			if (unit.type == unit_type_ennemy_generator) then
+				ennemyremaining = true
+				break
+			elseif (unit.type >= ennemy_walker and unit.type <= ennemy_parasite) then
+				ennemyremaining = true
+				break
+			end
+		end
+		if (not ennemyremaining) then
+			bossroomstate += 1
+		end
+
+	-- place plateform
+	elseif (bossroomstate <= 6) then
+		mset(113 - bossroomstate, 42, 195)
+		local transition1 = initializeparticule((114 - bossroomstate)*8, 42*8, newanimation(195,2,5), 10)
+		transition1.gravityafected = false
+
+		mset(94 + bossroomstate, 42, 195)
+		local transition2 = initializeparticule((94 + bossroomstate)*8, 42*8, newanimation(195,2,5), 10)
+		transition2.gravityafected = false
+
 		bossroomstate += 1
+
+		if (bossroomstate == 7 and killboard.jumper == 0) then
+			bossroomstate = 22
+		end
+
+	-- tempo
+	elseif (bossroomstate <= 19) then
+		bossroomstate += 1
+
+	-- init wave 2
+	elseif (bossroomstate == 20) then
+		initializeennemygenerator(98*8,  43*8, ennemy_jumper, 40, killboard.jumper)
+		initializeennemygenerator(109*8, 43*8, ennemy_jumper, 40, killboard.jumper)
+		bossroomstate += 1
+
+	-- wave 2
+	elseif (bossroomstate == 21) then
+		local ennemyremaining = false
+		for unit in all(unitlist) do
+			if (unit.type == unit_type_ennemy_generator) then
+				ennemyremaining = true
+				break
+			elseif (unit.type >= ennemy_walker and unit.type <= ennemy_parasite) then
+				ennemyremaining = true
+				break
+			end
+		end
+		if (not ennemyremaining) then
+			bossroomstate += 1
+		end
+
+	-- place plateform
+	elseif (bossroomstate <= 23) then
+		mset(132 - bossroomstate, 39, 195)
+		local transition1 = initializeparticule((132 - bossroomstate)*8, 39*8, newanimation(195,2,5), 10)
+		transition1.gravityafected = false
+
+		mset(75 + bossroomstate, 38, 195)
+		local transition2 = initializeparticule((75 + bossroomstate)*8, 38*8, newanimation(195,2,5), 10)
+		transition2.gravityafected = false
+
+		bossroomstate += 1
+		if (bossroomstate == 24 and killboard.flyer == 0) then
+			bossroomstate = 26
+		end
+
+	-- init wave 3
+	elseif (bossroomstate == 24) then
+		initializeennemygenerator(97*8,  39*8, ennemy_flyer, 100, killboard.flyer)
+		initializeennemygenerator(109*8, 37*8, ennemy_flyer, 100, killboard.flyer)
+		bossroomstate += 1
+	
+	-- wave 3
+	elseif (bossroomstate == 25) then
+		local ennemyremaining = false
+		for unit in all(unitlist) do
+			if (unit.type == unit_type_ennemy_generator) then
+				ennemyremaining = true
+				break
+			elseif (unit.type >= ennemy_walker and unit.type <= ennemy_parasite) then
+				ennemyremaining = true
+				break
+			end
+		end
+		if (not ennemyremaining) then
+			bossroomstate += 1
+		end
 	end
 end
 
@@ -989,9 +1093,9 @@ function initializebosssystem()
 end
 
 function resetbosssystem()
-	killboard.walker = 10
-	killboard.flyer = 2
-	killboard.jumper = 3
+	killboard.walker = 0
+	killboard.flyer = 0
+	killboard.jumper = 0
 end
 
 
@@ -1053,8 +1157,8 @@ function updatephysics(unit, step)
 				unit.positiony += step*unit.speedy
 			end
 
-		-- speed null so repositionate unit in a good way to avoid overlay on y axis (repositionate on top of the nearest plateform)
-		else
+		-- speed null so repositionate unit in a good way to avoid overlap on y axis (repositionate on top of the nearest plateform)
+		elseif (unit.type != unit_type_particule) then
 			if (checkflag(unit.positionx + collisionthreshold, unit.positiony + 8*unit.sizey - 1, flag_solid) or checkflag(unit.positionx + 8*unit.sizex - 1 - collisionthreshold, unit.positiony + 8*unit.sizey - 1, flag_solid) ) then
 				unit.positiony -= 1
 			elseif (not unit.traversable and (checkflag(unit.positionx + collisionthreshold, unit.positiony + 8*unit.sizey - 1, flag_traversable) or checkflag(unit.positionx + 8*unit.sizex - 1 - collisionthreshold, unit.positiony + 8*unit.sizey - 1, flag_traversable) )) then
@@ -1375,14 +1479,16 @@ function checkflag(x, y, flag)
 end
 
 function destroy(x, y)
-	mset(flr(x/8), flr(y/8), 0)
 	local particle = initializeparticule(8*flr(x/8), 8*flr(y/8), newanimation(205,2,5), 10)
 	particle.gravityafected = false
 
-	if(checkflag(x+8, y, flag_destructible)) then destroy(x+8,y) end
-	if(checkflag(x-8, y, flag_destructible)) then destroy(x-8,y) end
-	if(checkflag(x, y+8, flag_destructible)) then destroy(x,y+8) end
-	if(checkflag(x, y-8, flag_destructible)) then destroy(x,y-8) end
+	if(checkflag(x, y, flag_transmission)) then
+		mset(flr(x/8), flr(y/8), 0)
+		if(checkflag(x+8, y, flag_destructible)) then destroy(x+8,y) end
+		if(checkflag(x-8, y, flag_destructible)) then destroy(x-8,y) end
+		if(checkflag(x, y+8, flag_destructible)) then destroy(x,y+8) end
+		if(checkflag(x, y-8, flag_destructible)) then destroy(x,y-8) end
+	else mset(flr(x/8), flr(y/8), 0) end
 end
 
 function inroom(x, y, room)
@@ -1396,7 +1502,6 @@ function distance(unit1, unit2)
 	local y = unit1.positiony - unit2.positiony
 	return sqrt(x*x + y*y)
 end
-
 
 
 -- ************************************************************************ cartrige data/assets ************************************************************************
@@ -1470,9 +1575,9 @@ __gfx__
 86878777877787778777877787979c8c9c009d8c9c009d8c9d009c009c8c9d65958c8c9d9c9d9d9c9d005744009d9d009d9d9d9c9d574457009d9c9d9d9d8c65
 009600000000000000000000d42f3f3f3f3f3f3f3f669600340000000000660086978c9de5000000000000f59d8c677696000000006600008697000034008566
 95d4b4b4c400000000000000000000000000000000000000000000000000c5669600005444574457445445455444445455444400254545455544575455000067
-87970000000000004454000064847484943e3f3f3f6595000000000000006500957e0000e50093a3a3b300f500007d6595000000006500869734000034000065
+87970000000000004454000064847484943e3f3f3f6595000000000000006500957e0000e5000000000000f500007d6595000000006500869734000034000065
 96b5b5b5b5c45c9e9e9e000000000000000000000000000000009ed4b4d4b5659500f44545454545454545454545454545454545454545454545454556000000
-00000000000000253636570065000000955c3e3f3f66960000003c000000660096000000e5546072727055f5005c9e6696000c2c006500960034000000000066
+00000000000000253636570065000000955c3e3f3f66960000003c000000660096000000e52093a3a3b320f5005c9e6696000c2c006500960034000000000066
 95b50424b564748474847484945c0000000000000000a0b0009e6474942eb566960000454545454545454527454735454545454545454545454556379e9e6474
 7484940000005436363636006777877685141414141497003c0000000000650095000000e5603040505370f50004146595000000006787970000000000000065
 96b52f3f2e6777877787777685949e00000000000000a1b19e647500953e2e659500f4454527454527455600370000c6d6003747003705150037009e64747500
@@ -1505,14 +1610,14 @@ __gfx__
 0200200d0000200d0000200d020020d005005055d020d0d022cc222007266220d000d000000faf000000000008aaaa908aaa8980000002000088080200028000
 d0000d0000020000000d000000d00e00051555500d2020d02266622227226292000000000000f0000000000009a98a98aaa89990000000080000000000000000
 0000000000000000000000000000000050000500222220202226222222272699000000000000000000000000988aa999aaaaa889080200000080000000000000
-2222222200000000088ee822000220110000000055552225555500000000000055555555a0200020000000000000000000000000000000000000000000000000
-2999992200040400888ee22e000251120000000055229922222550000000002005555555000d00d0000000000000000000000000000000000000000000000000
-99992299420402042828228e1010510500000000552999925222500000000d020555555500000200000000000000000003000000000000000ccc0c1000000000
-2244242944044444028e228801021100000000005522999255425500000000000555555500000000000000000000300000000b000000000000ccc100000c1000
-9940444422444449008282280001015000000000555249925242550000000000005555550000000000000000000000300000bab000c01001011cc000000ccc00
-44440440222229998822e22200515111000000005555444254425500000000020055555500000000000000000000000000000b0000c00c0000cc0c0000010000
-40040040922922992828e822101020110000000005555455442555000000000205555555000000000000000000000b000ba00000cc100c0000c0100000000000
-0000000022222222222e222e11121112000000000555545544255500000000d0555555550000000000000000000300033bb30000000000000000000000000000
+2222222200000000088ee822011771660000000055552225555500000000000055555555a0200020000000000000000000000000000000000000000000000000
+2999992200040400888ee22e111776670000000055229922222550000000002005555555000d00d0000000000000000000000000000000000000000000000000
+99992299420402042828228e6161661700000000552999925222500000000d020555555500000200000000000000000003000000000000000ccc0c1000000000
+2244242944044444028e228806176611000000005522999255425500000000000555555500000000000000000000300000000b000000000000ccc100000c1000
+9940444422444449008282280016166100000000555249925242550000000000005555550000000000000000000000300000bab000c01001011cc000000ccc00
+44440440222229998822e22211667666000000005555444254425500000000020055555500000000000000000000000000000b0000c00c0000cc0c0000010000
+40040040922922992828e822616171660000000005555455442555000000000205555555000000000000000000000b000ba00000cc100c0000c0100000000000
+0000000022222222222e222e66676667000000000555545544255500000000d0555555550000000000000000000300033bb30000000000000000000000000000
 3333333333333333011111110101010100000000005554552425555000d000001111111100000000000000000000000000a77a0000077000000aa00000000000
 3bb333333bb333b310111111001010100000000000555455542550502d00000011111110000000000000000009000090090000900a7007a009a77a9000000000
 3b33bb3333b333b301011111000101010000000000555555542550000000000011111101000000000000700800000000a000000a070000700a7777a0000aa000
@@ -1660,7 +1765,7 @@ __label__
 00000000000000000000000000000004000000000000000400000000000000040000000000000004000000000000000400000000000000040000000000000004
 
 __gff__
-0000001a1a1a1a1a00080000000000000000000000001a1a000000000000000000000000000e1a0e1a1a1a1a00000000000000000e0e1a0000080808000000000202020200000202020200000000020000000000000002020202000000020a0a0000000000000202020200000000000000020000000002020202020000000000
+0000001a1a1a020200080000000000000000000000000202000000000000000000000000001e1a1e0202020200000000000000001e1e1a00001a1a1a000000000202020200000202020200000000020000000000000002020202000000021a1a0000000000000202020200000000000000020000000002020202020000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004040404000000000000001010000000040402000000000000000000000000001010000000000000000000000000000000000000000002000000000000000000
 __map__
 0070000000000000000000000000005668777877787778777877787778777867687877787778777877787778777867006877787778777877787778777877786700687778777877787778777877787867687778777877787778777877787778777877787778777877787778777877787778777877786700000000000000687767
