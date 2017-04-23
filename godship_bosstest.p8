@@ -45,6 +45,10 @@ generator_acid = 7
 ennemy_walker = 8
 ennemy_jumper = 9
 ennemy_flyer  = 10
+ennemy_parasite = 11 -- test
+
+-- ennemy generator
+unit_type_ennemy_generator = 12
 
 -- material flags
 flag_none   	 = 0
@@ -127,10 +131,12 @@ rooms = {
 	{16*8*7, 0, 16*8, 16*8*3, {12,14,16}, {}},
 	{16*8*6, 16*8, 16*8, 16*8, {13,15}, {}},
 	{16*8*5, 16*8, 16*8, 16*8*2, {14,9}, {}},
+
 	{16*8*6, 16*8*2, 16*8, 16*8, {13}, {}}
 }
+bossroomstate = 0
 
--- scenario definition
+-- scenario block definition
 scenario = {
 	-- {sprite, picked, {text for popup in line array}, optionnal string}
 	{33, false, {"god damn gun !","finnaly got you !"}, "shoot"},
@@ -181,6 +187,7 @@ function _init()
 	initializeplayer()
 	initializecollision()
 	initializecamera()
+	initializebosssystem()
 	reset()
 
 	--placescenario(9*8, 14*8, 33)
@@ -195,11 +202,12 @@ function reset()
 	resetplayer()
 	resetroomsystem()
 	resetscenario()
+	resetbosssystem()
 
 	setplayerposition(111*8, 46*8)
-	player.djumpenable = true
-	player.shootenable = true
-	player.chargeshootenable = true
+	player.djumpEnable = true
+	player.shootEnable = true
+	player.chargeshootEnable = true
 end
 
 function _update()
@@ -260,6 +268,7 @@ function _update()
 
 		-- update room system
 		updateroom()
+		if (currentroom == 16) then updatebossroom() end
 
 	-- game in popup mode
 	elseif (gamestate == game_state_popup) then
@@ -352,9 +361,9 @@ function initializeplayer()
 	player.framedammage = 0
 	player.dammagetime = 0
 
-	player.shootenable = false
-	player.djumpenable = false
-	player.chargeshootenable = false
+	player.shootEnable = false
+	player.djumpEnable = false
+	player.chargeshootEnable = false
 
 	-- attach more animation
 	player.animations[unit_state_dead] = newanimation(20, 1, 5)
@@ -381,9 +390,9 @@ function resetplayer()
 	player.djumpavailable = true
 	player.shoottime = 0
 
-	player.shootenable = false
-	player.djumpenable = false
-	player.chargeshootenable = false
+	player.shootEnable = false
+	player.djumpEnable = false
+	player.chargeshootEnable = false
 end
 
 function setplayerposition(x, y)
@@ -440,7 +449,7 @@ function updateplayerstate()
 	elseif(player.state == unit_state_jump) then
 		if (controllerbuttonispressed(button_right)) then player.speedx = constant_walkspeed
 		elseif (controllerbuttonispressed(button_left)) then player.speedx = -constant_walkspeed end
-		if (controllerbuttondown(button_jump) and player.djumpavailable and player.djumpenable) then
+		if (controllerbuttondown(button_jump) and player.djumpavailable and player.djumpEnable) then
 			player.speedy = constant_jumpspeed
 			player.traversable = true
 			player.state = unit_state_djump
@@ -471,7 +480,7 @@ function updateplayerstate()
 		player.traversable = false
 		if (controllerbuttonispressed(button_right)) then player.speedx = constant_walkspeed
 		elseif (controllerbuttonispressed(button_left)) then player.speedx = -constant_walkspeed end
-		if (controllerbuttondown(button_jump) and player.djumpavailable and player.djumpenable) then
+		if (controllerbuttondown(button_jump) and player.djumpavailable and player.djumpEnable) then
 			player.speedy = constant_jumpspeed
 			player.traversable = true
 			player.state = unit_state_djump
@@ -495,11 +504,11 @@ end
 -- the player action state machine
 function updateplayeraction()
 	player.action = unit_state_idle
-	if (not player.shootenable) then
+	if (not player.shootEnable) then
 	elseif (controllerbuttondown(button_action)) then
 		player.shoottime = controllergetstatechangetime(button_action)
 	elseif (controllerbuttonup(button_action)) then
-		if (controllergetstatechangetime(button_action) - player.shoottime > constant_chargeshoottime and player.chargeshootenable) then
+		if (controllergetstatechangetime(button_action) - player.shoottime > constant_chargeshoottime and player.chargeshootEnable) then
 			local bullet = initializeparticule(player.positionx + player.direction*(8*player.sizex - 2) - player.direction*5, player.positiony+1, newanimation(249, 1, 5), 50)
 			bullet.speedx = player.direction*5
 			bullet.sizey = 0.7
@@ -565,9 +574,6 @@ end
 function initializewalker(x, y)
 	local ennemy  = newunit(x, y, 1, 1, ennemy_walker, newanimation(49, 2, 17))
 	ennemy.healthpoint = 1
-	ennemy.targetx = x
-	ennemy.targety = y
-	ennemy.targetdistance = 0
 	ennemy.damage = 1
 
 	-- behaviour
@@ -582,21 +588,21 @@ end
 
 function controllerwalker(unit)
 	-- avoid falling
-	if (unit.speedx > 0 and not checkflag(unit.positionx + 7, unit.positiony + 8, flag_solid) and not checkflag(unit.positionx + 7, unit.positiony + 8, flag_traversable)) then
+	if (unit.direction < 0 and not checkflag(unit.positionx + 7, unit.positiony + 8, flag_solid) and not checkflag(unit.positionx + 7, unit.positiony + 8, flag_traversable)) then
 		unit.direction = -unit.direction
-	elseif (unit.speedx < 0 and not checkflag(unit.positionx, unit.positiony + 8, flag_solid) and not checkflag(unit.positionx, unit.positiony + 8, flag_traversable)) then
+	elseif (unit.direction > 0 and not checkflag(unit.positionx, unit.positiony + 8, flag_solid) and not checkflag(unit.positionx, unit.positiony + 8, flag_traversable)) then
 		unit.direction = -unit.direction
 
 	-- avoid wall collision
-	elseif (unit.speedx > 0 and (checkflag(unit.positionx + 8, unit.positiony + 7, flag_solid) or checkflag(unit.positionx + 8, unit.positiony + 7, flag_traversable))) then
+	elseif (unit.direction < 0 and (checkflag(unit.positionx + 8, unit.positiony + 7, flag_solid) or checkflag(unit.positionx + 8, unit.positiony + 7, flag_traversable))) then
 		unit.direction = -unit.direction
-	elseif (unit.speedx < 0 and (checkflag(unit.positionx - 1, unit.positiony + 7, flag_solid) or checkflag(unit.positionx - 1, unit.positiony + 7, flag_traversable))) then
+	elseif (unit.direction > 0 and (checkflag(unit.positionx - 1, unit.positiony + 7, flag_solid) or checkflag(unit.positionx - 1, unit.positiony + 7, flag_traversable))) then
 		unit.direction = -unit.direction
 
 	-- avoid exit room
-	elseif (unit.speedx > 0 and not inroom(unit.positionx + 8, unit.positiony + 7, currentroom)) then
+	elseif (unit.direction < 0 and not inroom(unit.positionx + 8, unit.positiony + 7, currentroom)) then
 		unit.direction = -unit.direction
-	elseif (unit.speedx < 0 and not inroom(unit.positionx - 1, unit.positiony + 7, currentroom)) then
+	elseif (unit.direction > 0 and not inroom(unit.positionx - 1, unit.positiony + 7, currentroom)) then
 		unit.direction = -unit.direction
 	end
 end
@@ -749,7 +755,7 @@ end
 
 
 
--- ************************************************************************ particles and particule generators functions ************************************************************************
+-- ************************************************************************ particles, particule generators and ennemy generators functions ************************************************************************
 -- initialize particle
 function initializeparticule(x, y, idleanimation, life)
 	local particule = newunit(x, y, 1, 1, unit_type_particule, idleanimation)
@@ -846,7 +852,41 @@ function placeacid(x, y)
 	acid.nextspawntime = rnd(acid.spawntime) + rnd(acid.spawntimedispertion)
 end
 
+-- initialize ennemy generators
+function initializeennemygenerator(x, y, ennemytype, spawntime, ennemycount)
+	local generator = newunit(x, y, 1, 1, unit_type_ennemy_generator, newanimation(48,1,1))
+	generator.gravityafected = false
+	generator.ennemytype = ennemytype
+	generator.ppositionx = 0
+	generator.ppositiony = 0
+	generator.spawntime = spawntime
+	generator.ennemycount = ennemycount
+	--generator.visible = false
 
+	-- machine state related attributes
+	generator.time = 0
+	generator.nextspawntime = 0
+	generator.update = updateennemygenerator
+	add(unitlist, generator)
+	return generator
+end
+
+-- update particule generator
+function updateennemygenerator(unit)
+	unit.time += 1
+
+	if (unit.time >= unit.nextspawntime) then
+		if (unit.ennemytype == ennemy_walker) then initializewalker(unit.positionx + unit.ppositionx, unit.positiony + unit.ppositiony)
+		elseif (unit.ennemytype == ennemy_jumper) then initializejumper(unit.positionx + unit.ppositionx, unit.positiony + unit.ppositiony)
+		elseif (unit.ennemytype == ennemy_flyer) then initializeflyer(unit.positionx + unit.ppositionx, unit.positiony + unit.ppositiony)
+		end
+
+		unit.ennemycount -= 1
+		if (unit.ennemycount <= 0) then unit.state = unit_state_dead end
+		unit.time = 0
+		unit.nextspawntime = unit.spawntime
+	end
+end
 
 -- ************************************************************************ room system functions ************************************************************************
 -- reset room system
@@ -855,6 +895,7 @@ function resetroomsystem()
 	for unit in all(tmpunitlist) do del(tmpunitlist, unit) end
 	currentroom = 1
 	initializeroom(currentroom)
+	bossroomstate = 0
 end
 
 -- initialize room : place unit of correct type to correct position depending of the room structure
@@ -872,6 +913,17 @@ function initializeroom(room)
 				placescenario(newunitlist[i][1], newunitlist[i][2], item[1], newunitlist[i][4])
 			end
 		end
+	end
+
+	if (room == 16) then
+		--initializeennemygenerator(98*8,  33*8, ennemy_walker, 30, killboard.walker)
+		--initializeennemygenerator(109*8, 33*8, ennemy_walker, 30, killboard.walker)
+
+		--initializeennemygenerator(98*8,  33*8, ennemy_jumper, 30, killboard.jumper)
+		--initializeennemygenerator(109*8, 33*8, ennemy_jumper, 30, killboard.jumper)
+
+		--initializeennemygenerator(98*8,  33*8, ennemy_flyer, 30, killboard.flyer)
+		--initializeennemygenerator(109*8, 33*8, ennemy_flyer, 30, killboard.flyer)
 	end
 end
 
@@ -899,6 +951,16 @@ function updateroom()
 end
 
 
+function updatebossroom()
+	if (bossroomstate == 0) then
+		if(player.positionx >= 103*8 and player.positionx <= 105*8) then bossroomstate += 1 end
+	elseif (bossroomstate == 1) then
+		initializeennemygenerator(98*8,  43*8, ennemy_walker, 30, killboard.walker)
+		initializeennemygenerator(109*8, 43*8, ennemy_walker, 30, killboard.walker)
+		bossroomstate += 1
+	end
+end
+
 
 -- ************************************************************************ scenario functions ************************************************************************
 -- place a scenario block (a chest with a sprite floating on top)
@@ -919,7 +981,18 @@ function resetscenario()
 	end
 end
 
+function initializebosssystem()
+	killboard = {}
+	killboard.walker = 0
+	killboard.flyer = 0
+	killboard.jumper = 0
+end
 
+function resetbosssystem()
+	killboard.walker = 10
+	killboard.flyer = 2
+	killboard.jumper = 3
+end
 
 
 -- ************************************************************************ physics functions ************************************************************************
@@ -1035,9 +1108,9 @@ end
 -- initialize collision callbacks matrix
 function initializecollision()
 	_colisionmatrix = {}
-	for i = 1, 11 do
+	for i = 1, 13 do
 		_colisionmatrix[i] = {}
-		for j = 1, 11 do
+		for j = 1, 13 do
 			_colisionmatrix[i][j] = nil
 		end
 	end
@@ -1065,8 +1138,8 @@ function initializecollision()
 	_colisionmatrix[unit_type_particule][ennemy_flyer] = callbackcollisionparticuleunit					-- [3][10]
 
 	-- symetrize matrix
-	for i = 1, 11 do
-		for j = i, 11 do
+	for i = 1, 13 do
+		for j = i, 13 do
 			_colisionmatrix[j][i] = _colisionmatrix[i][j]
 		end
 	end
@@ -1131,11 +1204,11 @@ function callbackcollisionplayerscenario(unit1, unit2)
 	local item = scenario[unit.index]
 	item[2] = true
 	if (item[4] == "shoot") then
-		player.shootenable = true
+		player.shootEnable = true
 	elseif (item[4] == "djump") then
-		player.djumpenable = true
+		player.djumpEnable = true
 	elseif (item[4] == "cshoot") then
-		player.chargeshootenable = true
+		player.chargeshootEnable = true
 	end
 
 	if (count(item[3])) then
@@ -1291,7 +1364,7 @@ function newunit(x, y, w, h, type, idleanimation)
 	unit.visible = true									-- unit is visible (or not!)
 
 	unit.update = nil 									-- unit update function (machine state)
-	unit.controller = nil 								-- unit behaviour (ia)
+	unit.controller = nil 								-- unit behaviour (IA)
 	return unit
 end
 
