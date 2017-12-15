@@ -2,6 +2,11 @@ pico-8 cartridge // http://www.pico-8.com
 version 8
 __lua__
 
+
+-- https://github.com/seleb/PICO-8-Token-Optimizations
+--     Assignment with Commas
+--     Actually Do Your Math
+
 -- ************************************************************************ constant definition ************************************************************************
 -- button inputs
 button_left   = 0
@@ -249,9 +254,9 @@ function reset()
 
 	-- cheat zone
 	--setplayerposition(81*8, 46*8)
-	--player.djumpenable = true
-	--player.shootenable = true
-	--player.chargeshootenable = true
+	player.djumpenable = true
+	player.shootenable = true
+	player.chargeshootenable = true
 	--player.invulnerable = true
 	--killboard.walker = 3
 	--killboard.jumper = 1
@@ -261,27 +266,25 @@ end
 function _update()
 	-- need to reset game
 	if (player.state == unit_state_dead) then
-
 		-- create dead position vector
-		local dead = {}
-		dead.positionx = player.positionx
-		dead.positiony = player.positiony
+		local deadx = player.positionx
+		local deady = player.positiony
 
 		-- gravity on body
 		while true do
-			if (checkflag(dead.positionx + 1, dead.positiony + 8, flag_solid) or checkflag(dead.positionx + 6, dead.positiony + 8, flag_solid) ) then
+			if (checkflag(deadx + 1, deady + 8, flag_solid) or checkflag(deadx + 6, deady + 8, flag_solid) ) then
 				break
-			elseif (checkflag(dead.positionx + 1, dead.positiony + 8, flag_traversable) or checkflag(dead.positionx + 6, dead.positiony + 8, flag_traversable) ) then
+			elseif (checkflag(deadx + 1, deady + 8, flag_traversable) or checkflag(deadx + 6, deady + 8, flag_traversable) ) then
 				break
 			else
-				dead.positiony += 1
+				deady += 1
 			end
 		end
 
 		-- search body room
 		for i = 1, 16 do -- check all room
-			if (inroom(dead.positionx, dead.positiony, i)) then
-				add(rooms[i].deadbodylist, dead)
+			if (inroom(deadx, deady, i)) then
+				add(rooms[i].deadbodylist, {positionx = deadx, positiony = deady})
 				break
 			end
 		end
@@ -338,10 +341,14 @@ function _update()
 					end
 				end
 			end
+
+			-- remove dead unit
 			for unit in all(unitlist) do
 				if (unit.state == unit_state_dead) then del(unitlist, unit) end
 			end
 		end
+
+		-- remove dead unit of hud
 		for unit in all(hudunit) do
 			if (unit.state == unit_state_dead) then del(hudunit, unit) end
 		end
@@ -355,7 +362,7 @@ function _update()
 		updatecontroller(framecounter)
 		if (controllerbuttonup(button_action)) then
 			gamestate = game_state_playing
-			for line in all(cam.popuptext) do del(cam.popuptext, line) end
+			cam.popuptext = {}
 		end
 
 	-- move only camera
@@ -635,12 +642,11 @@ function updateplayeraction()
 		end
 
 		if(player.state == unit_state_idle) then
-			--player.pose = 1
 			player.statetime = 0
 		end
 		player.shoottime = 0
 		player.action = unit_state_shooting
-	elseif (controllerbuttonispressed(button_action)) then
+	elseif (controllerbuttonispressed(button_action) and player.chargeshootenable) then
 		player.action = unit_state_charging
 	end
 
@@ -673,8 +679,6 @@ function updateplayerdammage()
 	player.framedammage = 0
 	if (player.healthpoint <= 0) then player.state = unit_state_dead end
 end
-
-
 
 -- ************************************************************************ ennemy functions ************************************************************************
 -- initialize walker ennemy
@@ -1233,72 +1237,79 @@ end
 -- move object to delta and check collision with environement
 -- compactable si develloppement des variable local
 function updatephysics(unit, step)
-	local collisionthreshold = 1
+	local x = unit.positionx
+	local y = unit.positiony
+	local sx = 8 * unit.sizex
+	local sy = 8 * unit.sizey
+	local callback = _colisionmatrix[type_environement][unit.type]
+	local notraversable = not unit.traversable
 
 	-- aply gravity if unit is not touching ground
 	if (unit.gravityafected) then
-		if (checkflag(unit.positionx + collisionthreshold, unit.positiony + 8*unit.sizey, flag_solid) or
-			checkflag(unit.positionx + 8*unit.sizex - 1 - collisionthreshold, unit.positiony + 8*unit.sizey, flag_solid) ) then
-		elseif (not unit.traversable and (checkflag(unit.positionx + collisionthreshold, unit.positiony + 8*unit.sizey, flag_traversable) or
-										  checkflag(unit.positionx + 7 - collisionthreshold, unit.positiony + 8, flag_traversable) )) then
+		if (checkflag(x + 1, y + sy, flag_solid) or
+			checkflag(x + sx - 2, y + sy, flag_solid) ) then
+		elseif (notraversable and (checkflag(x + 1, y + sy, flag_traversable) or checkflag(x + 6, y + 8, flag_traversable) )) then
 		else
-			unit.speedy += step*0.4 -- gravity = 0.4
+			unit.speedy += step * 0.4   -- gravity = 0.4
 		end
 	end
 
-	if (_colisionmatrix[type_environement][unit.type]) then
-		-- check left and right collision with environement
-		if (unit.speedx > 0) then
-			if (checkflag(unit.positionx + 8*unit.sizex - 1 + step*unit.speedx, unit.positiony + collisionthreshold, flag_solid) or
-				checkflag(unit.positionx + 8*unit.sizex - 1 + step*unit.speedx, unit.positiony + 8*unit.sizey - 1 - collisionthreshold, flag_solid) ) then
-				_colisionmatrix[type_environement][unit.type](unit, flag_solid, "x")
+	local dx = step * unit.speedx
+	local dy = step * unit.speedy
 
-			elseif (not unit.traversable and (checkflag(unit.positionx + 8*unit.sizex - 1 + step*unit.speedx, unit.positiony + collisionthreshold, flag_traversable) or
-											  checkflag(unit.positionx + 8*unit.sizex - 1 + step*unit.speedx, unit.positiony + 8*unit.sizey - 1 - collisionthreshold, flag_traversable) )) then
-				_colisionmatrix[type_environement][unit.type](unit, flag_traversable, "x")
+	if (callback) then
+		-- check left and right collision with environement
+		if (dx > 0) then
+			if (checkflag(x + sx - 1 + dx, y + 1, flag_solid) or checkflag(x + sx - 1 + dx, y + sy - 2, flag_solid) ) then
+				callback(unit, flag_solid, "x")
+			elseif (notraversable and (checkflag(x + sx - 1 + dx, y + 1, flag_traversable) or checkflag(x + sx - 1 + dx, y + sy - 2, flag_traversable) )) then
+				callback(unit, flag_traversable, "x")
 			else
-				unit.positionx += step*unit.speedx
+				x += dx
 			end
-		elseif (unit.speedx < 0) then
-			if (checkflag(unit.positionx + step*unit.speedx, unit.positiony + collisionthreshold, flag_solid) or checkflag(unit.positionx + step*unit.speedx, unit.positiony + 8*unit.sizey - 1 - collisionthreshold, flag_solid) ) then
-				_colisionmatrix[type_environement][unit.type](unit, flag_solid, "x")
-			elseif (not unit.traversable and (checkflag(unit.positionx + step*unit.speedx, unit.positiony + collisionthreshold, flag_traversable) or checkflag(unit.positionx + step*unit.speedx, unit.positiony + 8*unit.sizey - 1 - collisionthreshold, flag_traversable) )) then
-				_colisionmatrix[type_environement][unit.type](unit, flag_traversable, "x")
+		elseif (dx < 0) then
+			if (checkflag(x + dx, y + 1, flag_solid) or checkflag(x + dx, y + sy - 2, flag_solid) ) then
+				callback(unit, flag_solid, "x")
+			elseif (notraversable and (checkflag(x + dx, y + 1, flag_traversable) or checkflag(x + dx, y + sy - 2, flag_traversable) )) then
+				callback(unit, flag_traversable, "x")
 			else
-				unit.positionx += step*unit.speedx
+				x += dx
 			end
 		end
 
 		-- check up and down collision with environement
-		if (unit.speedy > 0) then
-			if (checkflag(unit.positionx + collisionthreshold, unit.positiony + 8*unit.sizey - 1 + step*unit.speedy, flag_solid) or checkflag(unit.positionx + 8*unit.sizex - 1 - collisionthreshold, unit.positiony + 8*unit.sizey - 1 + step*unit.speedy, flag_solid) ) then
-				_colisionmatrix[type_environement][unit.type](unit, flag_solid, "y")
-			elseif (not unit.traversable and (checkflag(unit.positionx + collisionthreshold, unit.positiony + 8*unit.sizey - 1 + step*unit.speedy, flag_traversable) or checkflag(unit.positionx + 8*unit.sizex - 1 - collisionthreshold, unit.positiony + 8*unit.sizey - 1 + step*unit.speedy, flag_traversable) )) then
-				_colisionmatrix[type_environement][unit.type](unit, flag_traversable, "y")
+		if (dy > 0) then
+			if (checkflag(x + 1, y + sy - 1 + dy, flag_solid) or checkflag(x + sx - 2, y + sy - 1 + dy, flag_solid) ) then
+				callback(unit, flag_solid, "y")
+			elseif (notraversable and (checkflag(x + 1, y + sy - 1 + dy, flag_traversable) or checkflag(x + sx - 2, y + sy - 1 + dy, flag_traversable) )) then
+				callback(unit, flag_traversable, "y")
 			else
-				unit.positiony += step*unit.speedy
+				y += dy
 			end
-		elseif (unit.speedy < 0) then
-			if (checkflag(unit.positionx + collisionthreshold, unit.positiony + step*unit.speedy, flag_solid) or checkflag(unit.positionx + 8*unit.sizex - 1 - collisionthreshold, unit.positiony + step*unit.speedy, flag_solid) ) then
-				_colisionmatrix[type_environement][unit.type](unit, flag_solid, "y")
-			elseif (not unit.traversable and (checkflag(unit.positionx + collisionthreshold, unit.positiony + step*unit.speedy, flag_traversable) or checkflag(unit.positionx + 8*unit.sizex - 1 - collisionthreshold, unit.positiony + step*unit.speedy, flag_traversable) )) then
-				_colisionmatrix[type_environement][unit.type](unit, flag_traversable, "y")
+		elseif (dy < 0) then
+			if (checkflag(x + 1, y + dy, flag_solid) or checkflag(x + sx - 2, y + dy, flag_solid) ) then
+				callback(unit, flag_solid, "y")
+			elseif (notraversable and (checkflag(x + 1, y + dy, flag_traversable) or checkflag(x + sx - 2, y + dy, flag_traversable) )) then
+				callback(unit, flag_traversable, "y")
 			else
-				unit.positiony += step*unit.speedy
+				y += dy
 			end
 
 		-- speed null so repositionate unit in a good way to avoid overlap on y axis (repositionate on top of the nearest plateform)
 		elseif (unit.type != unit_type_particule) then
-			if (checkflag(unit.positionx + collisionthreshold, unit.positiony + 8*unit.sizey - 1, flag_solid) or checkflag(unit.positionx + 8*unit.sizex - 1 - collisionthreshold, unit.positiony + 8*unit.sizey - 1, flag_solid) ) then
-				unit.positiony -= 1
-			elseif (not unit.traversable and (checkflag(unit.positionx + collisionthreshold, unit.positiony + 8*unit.sizey - 1, flag_traversable) or checkflag(unit.positionx + 8*unit.sizex - 1 - collisionthreshold, unit.positiony + 8*unit.sizey - 1, flag_traversable) )) then
-				unit.positiony -= 1
+			if (checkflag(x + 1, y + sy - 1, flag_solid) or checkflag(x + sx - 2, y + sy - 1, flag_solid) ) then
+				y -= 1
+			elseif (notraversable and (checkflag(x + 1, y + sy - 1, flag_traversable) or checkflag(x + sx - 2, y + sy - 1, flag_traversable) )) then
+				y -= 1
 			end
 		end
 	else
-		unit.positionx += step*unit.speedx
-		unit.positiony += step*unit.speedy
+		x += dx
+		y += dy
 	end
+
+	unit.positionx = x
+	unit.positiony = y
 end
 
 -- environement collision callbacks
@@ -1311,19 +1322,22 @@ function callbackphysicsenvironementunit(unit, blockflag, colisionaxis)
 end
 function callbackphysicsenvironementparticule(unit, blockflag, colisionaxis)
 	if (unit.environementafected) then
+		local x = unit.positionx
+		local y = unit.positiony
+
 		if (unit.damage > 0) then
 			if (unit.damage >= 3) then
 				if (unit.speedx > 0) then
-					if (checkflag(unit.positionx + 8, unit.positiony + 3, flag_destructible) or checkflag(unit.positionx + 8, unit.positiony + 4, flag_destructible) ) then
-						destroy(unit.positionx + 8, unit.positiony + 3)
+					if (checkflag(x + 8, y + 3, flag_destructible) or checkflag(x + 8, y + 4, flag_destructible) ) then
+						destroy(x + 8, y + 3)
 					end
 				elseif (unit.speedx < 0) then
-					if (checkflag(unit.positionx - 1, unit.positiony + 3, flag_destructible) or checkflag(unit.positionx - 1, unit.positiony + 4, flag_destructible) ) then
-						destroy(unit.positionx - 1, unit.positiony + 3)
+					if (checkflag(x - 1, y + 3, flag_destructible) or checkflag(x - 1, y + 4, flag_destructible) ) then
+						destroy(x - 1, y + 3)
 					end
 				end
 			end
-			local dead = initializeparticule(unit.positionx, unit.positiony, newanimation(251, 5, 1), 5)
+			local dead = initializeparticule(x, y, newanimation(251, 5, 1), 5)
 			dead.gravityafected = false
 			dead.direction = unit.direction
 		end
@@ -1475,22 +1489,18 @@ end
 -- ************************************************************************ rendering functions ************************************************************************
 function drawunit(unit)
 	if (unit.visible) then
-		local sx = flr(unit.sizex + 0.5)
-		local sy = flr(unit.sizey + 0.5)
-		spr(unit.animations[unit.state].start + unit.pose*sx, unit.positionx, unit.positiony, sx, sy, (unit.direction < 0))
+		spr(unit.animations[unit.state].start + unit.pose*unit.sizex, unit.positionx, unit.positiony, unit.sizex, unit.sizey, (unit.direction < 0))
 	end
 end
 
 function drawhudunit(unit, x, y)
 	if (unit.visible) then
-		local sx = flr(unit.sizex + 0.5)
-		local sy = flr(unit.sizey + 0.5)
-		spr(unit.animations[unit.state].start + unit.pose*sx, cam.x + unit.positionx + x, cam.y + unit.positiony + y, sx, sy, (unit.direction < 0))
+		spr(unit.animations[unit.state].start + unit.pose, cam.x + unit.positionx + x, cam.y + unit.positiony + y, 1, 1)
 	end
 end
 
 function drawpopup()
-	local h = max(30, 10*count(cam.popuptext))/2
+	local h = max(15, 5*count(cam.popuptext))
 	rect(cam.x + 23, cam.y + 63 - h, cam.x + 105, cam.y + 65 + h, 12)
 	rectfill(cam.x + 24, cam.y + 64 - h, cam.x + 104, cam.y + 64 + h, 0)
 	for i = 1, count(cam.popuptext) do
@@ -1511,8 +1521,9 @@ function updatecameraposition()
 			cam.y += cam.speed * dy / d
 		end
 	else
-		cam.x = mid(player.positionx - 64, rooms[currentroom][1], rooms[currentroom][1] + rooms[currentroom][3] - 128)
-		cam.y = mid(player.positiony - 64, rooms[currentroom][2], rooms[currentroom][2] + rooms[currentroom][4] - 128)
+		local tmpRoom = rooms[currentroom]
+		cam.x = mid(player.positionx - 64, tmpRoom[1], tmpRoom[1] + tmpRoom[3] - 128)
+		cam.y = mid(player.positiony - 64, tmpRoom[2], tmpRoom[2] + tmpRoom[4] - 128)
 	end
 end
 
@@ -1528,10 +1539,6 @@ function updatecontroller(time)
 		if (_controllerbuttonmap[i].previous != _controllerbuttonmap[i].state) then
 			_controllerbuttonmap[i].time = time
 		end
-		controllerbuttonup(i-1)
-		controllerbuttondown(i-1)
-		controllerbuttonispressed(i-1)
-		controllergetstatechangetime(i-1)
 	end
 end
 
@@ -1551,44 +1558,45 @@ function controllergetstatechangetime(button) return _controllerbuttonmap[button
 
 -- ************************************************************************ utils functions ************************************************************************
 function newanimation(start, frames, time)
-	local dummyanim = {}
-	dummyanim.start = start
-	dummyanim.frames = frames
-	dummyanim.time = time
+	local dummyanim = {
+		start = start,
+		frames = frames,
+		time = time
+	}
 	return dummyanim
 end
 
 function newunit(x, y, w, h, type, idleanimation)
-	local unit = {}
+	local unit = {
+		positionx = x,									-- unit position on x axis
+		positiony = y, 									-- unit position on x axis
+		speedx = 0,										-- unit speed on x axis (could be positif or negatif)
+		speedy = 0,										-- unit speed on y axis (could be positif or negatif)
+		sizex = w, 										-- unit size on y axis (scale is in tile (8 pixel))
+		sizey = h, 										-- unit size on y axis (scale is in tile (8 pixel))
+
+		direction = 1,									-- unit direction. default is 1. if you want to flip unit on x axis direction is equals to -1
+		gravityafected = true,							-- define if unit is afected by gravity
+		traversable = false,							-- define if unit can cross traversable plateform
+		state = unit_state_idle, 						-- unit state
+		statetime = 0,									-- state time elapsed since the unit change its state
+		damage = 0,										-- unit dammage
+
+		animations = {},								-- animations list
+		pose = 0,										-- used for animation state
+		visible = true,									-- unit is visible (or not!)
+		update = nil,									-- unit update function (machine state)
+		controller = nil 								-- unit behaviour (ia)
+	}
+
 	unit.type = type 									-- unit type (see at file beginig to see full type list)
-	unit.positionx = x 									-- unit position on x axis
-	unit.positiony = y 									-- unit position on y axis
-	unit.speedx = 0										-- unit speed on x axis (could be positif or negatif)
-	unit.speedy = 0										-- unit speed on y axis (could be positif or negatif)
-	unit.sizex = w 										-- unit size on x axis (scale is in tile (8 pixel))
-	unit.sizey = h 										-- unit size on y axis (scale is in tile (8 pixel))
-	unit.direction = 1									-- unit direction. default is 1. if you want to flip unit on x axis direction is equals to -1
-	unit.gravityafected = true							-- define if unit is afected by gravity
-	unit.traversable = false 							-- define if unit can cross traversable plateform
-
-	unit.state = unit_state_idle 						-- unit state
-	unit.statetime = 0									-- state time elapsed since the unit change its state
-	unit.damage = 0										-- unit dammage (dammage given to the player)
-
-	unit.animations = {}								-- animations list
 	unit.animations[unit_state_idle] = idleanimation	-- define idle animation
 	unit.animations[unit_state_dead] = idleanimation	-- define dead animation. can be changed if you want (but define in "construcor" since it could cause a crash)
-	unit.pose = 0										-- used for animation state
-	unit.visible = true									-- unit is visible (or not!)
-
-	unit.update = nil 									-- unit update function (machine state)
-	unit.controller = nil 								-- unit behaviour (ia)
 	return unit
 end
 
 function checkflag(x, y, flag)
-	local sprite_id = mget(flr(x/8),flr(y/8))
-	if (fget(sprite_id, flag)) return true
+	if (fget(mget(flr(x/8),flr(y/8)), flag)) return true
 	return false
 end
 
@@ -1606,7 +1614,8 @@ function destroy(x, y)
 end
 
 function inroom(x, y, room)
-	if (mid(x, rooms[room][1], rooms[room][1] + rooms[room][3]) == x) and (mid(y, rooms[room][2], rooms[room][2] + rooms[room][4]) == y) then
+	local tmp = rooms[room]
+	if (mid(x, tmp[1], tmp[1] + tmp[3]) == x) and (mid(y, tmp[2], tmp[2] + tmp[4]) == y) then
 		return true
 	else return false end
 end
