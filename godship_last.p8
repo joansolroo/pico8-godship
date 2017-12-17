@@ -236,6 +236,9 @@ cheatstate = 1
 
 -- ************************************************************************ pico8 and specific engine function functions ************************************************************************
 function _init()
+	-- add custom menu entry
+	menuitem( 1, "suicide ...", function() player.healthpoint = 0 end )
+
 	-- init controller
 	_controllerbuttonmap = {}
 	for i = 1, 6 do
@@ -301,10 +304,10 @@ function reset()
 
 	-- cheat init zone
 	--setplayerposition(111, 46)
-	player.djumpenable = true
-	player.shootenable = true
-	player.chargeshootenable = true
-	player.invulnerable = true
+	--player.djumpenable = true
+	--player.shootenable = true
+	--player.chargeshootenable = true
+	--player.invulnerable = true
 end
 
 function _update()
@@ -444,29 +447,15 @@ function _draw()
 	local tmpvar1 = 0 -- offset x
 	local tmpvar2 = 0 -- offset y
 	for unit in all(hudunit) do
-		--if (unit.axis == 'x') then
 			drawhudunit(unit, tmpvar1, 0)
 			tmpvar1 += 8
-		--else
-		--	drawhudunit(unit, 0, tmpvar2)
-		--	tmpvar2 += 8
-		--end
 	end
 
-	-- killboard hud
+	-- killboard and collectables hud
 	tmpvar1 = killboard.walker + killboard.jumper + killboard.flyer -- number of ennemy killed
-	--for i = 1, flr(tmpvar1 / 32) do
-	--	spr(1, cam.x, cam.y + 120 - 6*i, 1, 1, false)
-	--end
-	--for i = 1, tmpvar1 - 32*flr(tmpvar1 / 32) do
-	--	spr(21, cam.x + 120 - 4*i, cam.y + 120, 1, 1, false)
-	--end
-
 	rectfill(cam.x+70,cam.y,cam.x+128,cam.y+7,0)
 	print( 1235, cam.x+112,cam.y+1, 7)
 	spr(36,cam.x+103,cam.y)
-	
-	--rectfill(cam.x+128-charcount*4-12,cam.y,cam.x+128,cam.y+7,0)
 	print( "6".."/66", cam.x+80,cam.y+1, 7)
 	spr(35,cam.x+72,cam.y)
 	
@@ -1570,7 +1559,6 @@ function callbackcollisionparticuleunit(unit1, unit2)
 			
 			local skull = newunit(0, 15*8, 1, 1, unit_type_particule, newanimation(48, 1, 1))
 				skull.life = 30
-				skull.axis = 'x'
 				skull.update = updateparticle
 				add(hudunit, skull)
 		end
@@ -1614,6 +1602,14 @@ function callbackcollisionplayerscenario(unit1, unit2)
 		destroy(112*8, 46*8)
 	end
 
+	-- add item sprite to temporary hud list
+	if (item[1] != 1) then
+		local skull = newunit(0, 120, 1, 1, unit_type_particule, newanimation(item[1], 1, 1))
+		skull.life = 30
+		skull.update = updateparticle
+		add(hudunit, skull)
+	end
+
 	-- show popup
 	if (count(item[3])) then
 		cam.popuptext = item[3]
@@ -1630,6 +1626,7 @@ end
 
 function drawhudunit(unit, x, y)
 	if (unit.visible) then
+		rectfill(cam.x + unit.positionx + x, cam.y + unit.positiony + y, cam.x + unit.positionx + x +8, cam.y + unit.positiony + y +8, 0)
 		spr(unit.animations[unit.state].start + unit.pose, cam.x + unit.positionx + x, cam.y + unit.positiony + y, 1, 1)
 	end
 end
