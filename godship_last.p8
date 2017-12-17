@@ -264,7 +264,7 @@ function _init()
 	reset()
 
 	-- popup on first entrance in game
-	cam.popuptext = {"i survived, but","","not my gear.", "                \151"}
+	cam.popuptext = {"i survived, but","not my gear."}
 	gamestate = game_state_popup
 end
 
@@ -300,7 +300,7 @@ function reset()
 	resetbosssystem()
 
 	-- cheat init zone
-	setplayerposition(81, 6)
+	setplayerposition(111, 46)
 	player.djumpenable = true
 	player.shootenable = true
 	player.chargeshootenable = true
@@ -1204,9 +1204,9 @@ function updatebossroom()
 	-- wave 1b
 	elseif (boss.state == 4) then
 		boss.timer += 1
-		if (boss.timer > 30) then
+		if (boss.timer > 20) then
 			boss.timer = 0
-			local bullet = initializeparticule(828, (39 - boss.currentwave)*8, newanimation(239, 1, 5), 50)
+			local bullet = initializeparticule(828, 304, newanimation(239, 1, 5), 50)
 
 			bullet.speedx = player.positionx - bullet.positionx
 			bullet.speedy = player.positiony - bullet.positiony
@@ -1233,6 +1233,21 @@ function updatebossroom()
 				if(boss.currentwave > 3) then
 					boss.state += 1
 					boss.timer = 0
+					destroy(103*8, 37*8)
+					destroy(104*8, 37*8)
+
+					local tmp = initializeparticule(103*8, 37*8, newanimation(8,1,10), 100)
+						tmp.damage = 0.1
+						tmp.sizex = 2
+						tmp.sizey = 2
+					--tmp = initializeparticule(104*8, 37*8, newanimation(58,1,10), 100)
+					--	tmp.damage = 0.1
+					--tmp = initializeparticule(104*8, 36*8, newanimation(58,1,10), 100)
+					--	tmp.damage = 0.1
+					--	tmp.flipverticaly = true
+					--tmp = initializeparticule(103*8, 36*8, newanimation(57,1,10), 100)
+					--	tmp.damage = 0.1
+					--	tmp.flipverticaly = true
 				else boss.state = 1 end
 				break
 			end
@@ -1241,7 +1256,7 @@ function updatebossroom()
 	--	boss killed !!!!!!!!!!!!!!!!
 	else
 		boss.timer += 1
-		if(boss.timer > 60) then
+		if(boss.timer > 300) then
 			destroy(888, 368)
 			cam.popuptext = {"congratulation !","you won !", "press enter to quit"}
 			gamestate = game_state_end
@@ -1279,26 +1294,26 @@ function resetbosssystem()
 	{
 		ennemytype = unit_type_ennemy_walker,
 		layer = {
-			{101,33,55},												{106,33,55},
-			{101,34,55},												{106,34,55},
-			{101,35,55},												{106,35,55},
-						{102,36,55},						{105,36,55},
-									{103,37,55},{104,37,55}
+			{101,33,39},												{106,33,40},
+			{101,34,39},												{106,34,40},
+			{101,35,39},												{106,35,40},
+			{101,36,55},												{106,36,56}
 		}	
 	}, {
 		ennemytype = unit_type_ennemy_jumper,
 		layer = {
-			{102,33,52},						{105,33,52},
-			{102,34,52},						{105,34,52},
-			{102,35,52},						{105,35,52},
-						{103,36,52},{104,36,52}
+						{102,33,37},						{105,33,38},
+						{102,34,37},						{105,34,38},
+						{102,35,37},						{105,35,38},
+						{102,36,53},						{105,36,54}
 		}
 	},{
 		ennemytype = unit_type_ennemy_flyer,
 		layer = {
-			{103,33,37},{104,33,37},
-			{103,34,37},{104,34,37},
-			{103,35,37},{104,35,37}
+									{103,33,41},{104,33,42},
+									{103,34,41},{104,34,42},
+									{103,35,41},{104,35,42},
+									{103,36,41},{104,36,42}
 		}
 	}}
 end
@@ -1560,13 +1575,19 @@ function callbackcollisionplayerscenario(unit1, unit2)
 		player.djumpenable = true
 		player.healthpoint = 3
 	elseif (item[4] == "cshoot") then
+		player.shootenable = true
 		player.chargeshootenable = true
 		player.healthpoint = 3
-		mset(79, 46, 94) -- place destructible wall
+
+		-- place destructible wall and start transition animation
+		mset(79, 46, 94)
 		tmpvar1 = initializeparticule(632, 368, newanimation(210,2,5), 10)
 		tmpvar1.gravityafected = false
 	elseif (item[4] == "key") then
-		destroy(112, 46)
+		player.healthpoint = 3
+
+		-- open boss room
+		destroy(112*8, 46*8)
 	end
 
 	-- show popup
@@ -1579,7 +1600,7 @@ end
 -- ************************************************************************ rendering functions ************************************************************************
 function drawunit(unit)
 	if (unit.visible) then
-		spr(unit.animations[unit.state].start + unit.pose*unit.sizex, unit.positionx, unit.positiony, unit.sizex, unit.sizey, (unit.direction < 0))
+		spr(unit.animations[unit.state].start + unit.pose*unit.sizex, unit.positionx, unit.positiony, unit.sizex, unit.sizey, (unit.direction < 0), unit.flipverticaly)
 	end
 end
 
@@ -1590,12 +1611,13 @@ function drawhudunit(unit, x, y)
 end
 
 function drawpopup()
-	local h = max(15, 5*count(cam.popuptext))
+	local h = max(16, 5*count(cam.popuptext))
 	rect(cam.x + 23, cam.y + 63 - h, cam.x + 105, cam.y + 65 + h, 12)
 	rectfill(cam.x + 24, cam.y + 64 - h, cam.x + 104, cam.y + 64 + h, 0)
 	for i = 1, count(cam.popuptext) do
 		print(cam.popuptext[i], cam.x + 65 - 2.0 * #cam.popuptext[i], cam.y + 60 - h + 8*i, 7)
 	end
+	print("\151", cam.x + 97, cam.y + 59 + h, 7)
 end
 
 function updatecameraposition()
@@ -1991,7 +2013,7 @@ __label__
 00000000000000000000000000000004000000000000000400000000000000040000000000000004000000000000000400000000000000040000000000000004
 
 __gff__
-0000001a1a1a020200080000000000000000000000000202000000000000000000000000001e1a1e0202020200000000000000001e1e1a00001a1a1a000000000202020200000202020200000000020000000000000002020202000000021a1a0000000000000202020200000000020000020000000002020202020000000200
+0000001a1a1a020200080000000000000000000000000202000000000000000000000000001212121212120200000000000000001e1212121202021a000000000202020200000202020200000000020000000000000002020202000000021a1a0000000000000202020200000000020000020000000002020202020000000200
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004040404000000000000001010000000040402000400000000000000000000001010000000000000000000000000000000000000000002000000000000000000
 __map__
 00700000000000000000000000000056687778777877787778777877787778676878777877787778777877787778670068777877787778777877787778777867006877787778777877787778777878676877787778777877787778777877787778777877787778777877787778776777676878687867000000005849f3767767
