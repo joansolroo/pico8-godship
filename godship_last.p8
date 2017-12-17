@@ -459,7 +459,7 @@ function _draw()
 		spr(1, cam.x, cam.y + 120 - 6*i, 1, 1, false)
 	end
 	for i = 1, tmpvar1 - 32*flr(tmpvar1 / 32) do
-		spr(21, cam.x + 120, cam.y + 120 - 4*i, 1, 1, false)
+		spr(21, cam.x + 120 - 4*i, cam.y + 120, 1, 1, false)
 	end
 
 	-- draw player based on player animation state machine
@@ -1256,7 +1256,7 @@ function updatebossroom()
 	--	boss killed !!!!!!!!!!!!!!!!
 	else
 		boss.timer += 1
-		if(boss.timer > 300) then
+		if(boss.timer > 70) then
 			destroy(888, 368)
 			cam.popuptext = {"congratulation !","you won !", "press enter to quit"}
 			gamestate = game_state_end
@@ -1433,9 +1433,25 @@ function callbackphysicsenvironementparticule(unit, blockflag, colisionaxis)
 				unit.visible = false
 			end
 		elseif (unit.damage > 0) then
-			local dead = initializeparticule(x, y, newanimation(251, 5, 1), 5)
-			dead.gravityafected = false
-			dead.direction = unit.direction
+			if(unit.sizex <= 1) then
+				local dead = initializeparticule(x, y, newanimation(251, 5, 1), 5)
+				dead.gravityafected = false
+				dead.direction = unit.direction
+			else -- boss eye explosion
+				for i = 1, 5 do
+					local dead = initializeparticule(x +8, y +8, newanimation(7, 1, 10), 100)
+					dead.direction = unit.direction
+					dead.speedx = (rnd(10) - 5.0)/2.5
+					dead.speedy = constant_jumpspeed + (rnd(10) - 5.0)/2.5
+				end
+
+				for i = 1, 5 do
+					local dead = initializeparticule(x +8, y +8, newanimation(205, 3, 10), 30)
+					dead.direction = unit.direction
+					dead.speedx = (rnd(10) - 5.0)/2.5
+					dead.speedy = constant_jumpspeed + (rnd(10) - 5.0)/2.5
+				end
+			end
 
 			unit.speedx = 0
 			unit.life = 0
