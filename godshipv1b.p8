@@ -3,18 +3,14 @@ version 8
 __lua__
 
 
--- https://github.com/seleb/pico-8-token-optimizations
---     assignment with commas
---     actually do your math
-
 -- ************************************************************************ constant definition ************************************************************************
 -- button inputs
-button_left   = 0
-button_right  = 1
-button_up     = 2
-button_down   = 3
-button_action = 4
-button_jump   = 5
+button_left   = 1
+button_right  = 2
+button_up     = 3
+button_down   = 4
+button_action = 5
+button_jump   = 6
 
 -- unit machine state constants
 unit_state_idle    = 0
@@ -42,21 +38,21 @@ unit_type_particule_generator= 4
 unit_type_scenario           = 5
 unit_type_useless			 = 13
 
-unit_type_generator_fire = 6
-unit_type_generator_acid = 7
+unit_type_generator_fire 	= 6
+unit_type_generator_acid 	= 7
 
-unit_type_ennemy_walker = 8
-unit_type_ennemy_jumper = 9
-unit_type_ennemy_flyer  = 10
-unit_type_ennemy_particule = 11
+unit_type_ennemy_walker 	= 8
+unit_type_ennemy_jumper		= 9
+unit_type_ennemy_flyer  	= 10
+unit_type_ennemy_particule	= 11
 
-unit_type_ennemy_generator = 12
+unit_type_ennemy_generator	= 12
 
 -- material flags
-flag_none   	 = 0
-flag_solid  	 = 1
-flag_traversable = 2
-flag_destructible= 3
+flag_none   	  = 0
+flag_solid  	  = 1
+flag_traversable  = 2
+flag_destructible = 3
 flag_transmission = 4
 
 -- rooms definition for camera placement
@@ -154,7 +150,8 @@ rooms = {
 	{896, 0, 128, 384, {12,14,16}, {
 		{116, 10, 8,  0xffff},					-- walker
 		{125, 33, 10, 0xffff},					-- flyer
-		{125, 12, 10, 1}}},					-- flyer
+		{125, 12, 10, 1},						-- flyer
+		{113, 46, 5, 5}}},						-- scenario boss door close
 
 	-- room 14
 	{768, 128, 128, 128, {13,15}, {
@@ -188,7 +185,8 @@ scenario = {
 	{33, false, {"get plasma gun !","press \151 to shoot !"}, "shoot"},
 	{34, false, {"get jetpack !","double press \142","to double jump"}, "djump"},
 	{33, false, {"get charged gun !","keep \151 pressed","for more damage!"}, "cshoot"},
-	{1,  false, {"way to boss open"}, "key"}											-- use 1 to place a trigger scenario box
+	{1,  false, {"way to boss open"}, "key"},											-- use 1 to place a trigger scenario box
+	{1,  false, {"i need to find a","way to open this","corridor."}, ""}
 }
 
 -- player constant
@@ -241,7 +239,7 @@ function _init()
 
 	-- init controller
 	_controllerbuttonmap = {}
-	for i = 1, 6 do
+	for i = 1, 7 do
 		_controllerbuttonmap[i] = {}
 		_controllerbuttonmap[i].previous = false
 		_controllerbuttonmap[i].state = false
@@ -267,8 +265,8 @@ function _init()
 	reset()
 
 	-- popup on first entrance in game
-	cam.popuptext = {"i survived, but","not my gear."}
-	gamestate = game_state_popup
+	--cam.popuptext = {"i survived, but","not my gear."}
+	--gamestate = game_state_popup
 end
 
 function reset()
@@ -279,13 +277,19 @@ function reset()
 	gamestate = game_state_playing
 	
 	-- reset controller
-	for i = 1, 6 do
+	for i = 1, 7 do
 		_controllerbuttonmap[i].previous = false
 		_controllerbuttonmap[i].state = false
 	end
 
 	-- reset player state
-	resetplayer()
+	player.positionx, player.positiony, player.speedx, player.speedy = 56, 112, 0, 0
+	player.state, player.action = unit_state_idle, unit_state_idle
+	player.healthpoint, player.direction, player.pose = 3, 1, 0
+	player.dammagetime, player.framedammage, player.shoottime = 0, 0, 0
+	player.visible, player.djumpavailable = true, true
+	player.shootenable, player.djumpenable, player.chargeshootenable = false, false, false
+	killboard.walker, killboard.jumper, killboard.flyer = 0, 0, 0
 
 	-- reset room system
 	for unit in all(unitlist) do del(unitlist, unit) end
@@ -300,22 +304,45 @@ function reset()
 	end
 
 	-- reset boss system
-	resetbosssystem()
+	mset(111, 46, 0)
+	boss.state, boss.timer, boss.currentwave = 0, 0, 1
+	boss.wave = {{
+		ennemytype = unit_type_ennemy_walker,
+		layer = {
+			{101,33,39},												{106,33,40},
+			{101,34,39},												{106,34,40},
+			{101,35,39},												{106,35,40},
+			{101,36,55},												{106,36,56}
+		}	
+	}, {
+		ennemytype = unit_type_ennemy_jumper,
+		layer = {
+						{102,33,37},						{105,33,38},
+						{102,34,37},						{105,34,38},
+						{102,35,37},						{105,35,38},
+						{102,36,53},						{105,36,54}
+		}
+	},{
+		ennemytype = unit_type_ennemy_flyer,
+		layer = {
+									{103,33,41},{104,33,42},
+									{103,34,41},{104,34,42},
+									{103,35,41},{104,35,42},
+									{103,36,41},{104,36,42}
+		}
+	}}
 
 	-- cheat init zone
-	--setplayerposition(111, 46)
-	-- player.djumpenable = true
-	-- player.shootenable = true
-	-- player.chargeshootenable = true
-	-- player.invulnerable = true
+	--setplayerposition(84, 4)
+	--player.djumpenable, player.shootenable, player.chargeshootenable, player.invulnerable = true, true, true, true
+	--killboard.walker, killboard.jumper, killboard.flyer = 2, 1, 1
 end
 
 function _update()
 	-- need to reset game
 	if (player.state == unit_state_dead) then
 		-- create dead position vector
-		local deadx = player.positionx
-		local deady = player.positiony
+		local deadx, deady = player.positionx, player.positiony
 
 		-- gravity on body
 		while true do
@@ -432,7 +459,8 @@ end
 function _draw()
 	-- clear screen, place camera, and draw background
 	cls()
-	camera(cam.x, cam.y)
+	local camx, camy = cam.x, cam.y
+	camera(camx, camy)
 	map(0, 0, 0, 0, 128, 48)
 
 	-- draw all unit (first due to particle under player sprite)
@@ -444,58 +472,58 @@ function _draw()
 	end
 
 	-- temporary informations
-	local tmpvar1 = 0 -- offset x
-	local tmpvar2 = 0 -- offset y
+	local offset = 0 -- offset x, offset y
 	for unit in all(hudunit) do
-		drawhudunit(unit, tmpvar1, 0)
-		tmpvar1 += 8
+		drawhudunit(unit, offset)
+		offset += 8
 	end
 
 	-- killboard & collectible hud
-	rectfill(cam.x+70,cam.y,cam.x+128,cam.y+7,0)
-	print(killboard.walker + killboard.jumper + killboard.flyer, cam.x+112,cam.y+1, 7)
-	spr(36,cam.x+103,cam.y)
-	print( "6".."/66", cam.x+80,cam.y+1, 7)
-	spr(35,cam.x+72,cam.y)
+	rectfill(camx + 70, cam.y, camx + 128, camy + 7, 0)
+	print(killboard.walker + killboard.jumper + killboard.flyer, camx + 112, camy + 1, 7)
+	spr(36, camx + 103, cam.y)
+	print( "6".."/66", camx + 80, camy + 1, 7)
+	spr(35, camx + 72, camy)
 	
 	-- draw player based on player animation state machine
 	if (player.visible) then
+		local px, py, dir = player.positionx, player.positiony, player.direction > 0
+
 		-- jetpack sprite
 		if (player.state == unit_state_djump) then
-			spr(234, player.positionx - 8*player.direction, player.positiony+3, 1, 1, (player.direction < 0))
+			spr(234, px - 8 * player.direction, py+3, 1, 1, not dir)
 		end
 
 		-- player sprite based on animation state
-		spr(player.animations[player.state].start + player.pose, player.positionx, player.positiony, player.sizex, player.sizey, (player.direction < 0))
+		drawunit(player)
 
 		-- helmet / head dammage
 		if (player.healthpoint > 2) then
-			if (player.direction > 0) then line(player.positionx+1, player.positiony, player.positionx+3, player.positiony, 12)
-			else line(player.positionx+4, player.positiony, player.positionx+6, player.positiony, 12) end
+			if (dir) then line(px + 1, py, px + 3, py, 12)
+			else line(px + 4, py, px + 6, py, 12) end
 		elseif (player.healthpoint == 1) then
-			if (player.direction > 0) then line(player.positionx+1, player.positiony, player.positionx+3, player.positiony, 8)
-			else line(player.positionx+4, player.positiony, player.positionx+6, player.positiony, 8) end
+			if (dir) then line(px + 1, py, px + 3, py, 8)
+			else line(px + 4, py, px + 6, py, 8) end
 		end
 		
 		-- gun charging and fire shoot sprite
 		if (player.action == unit_state_shooting) then
-			spr(253, player.positionx + player.direction*8*player.sizex, player.positiony, 1, 1, (player.direction > 0))
+			spr(253, px + player.direction*8*player.sizex, py, 1, 1, dir)
 		elseif (player.action == unit_state_charging) then
-			tmpvar1 = player.animations[player.state].start + player.pose, player.positionx -- current player sprite
-			tmpvar2 = 3 -- charging gun color
+			local sprite, color = player.animations[player.state].start + player.pose, 3 -- current player sprite, charging gun color
 
-			if ((framecounter - player.shoottime)%2 == 0) then tmpvar2 = 11 end
+			if ((framecounter - player.shoottime)%2 == 0) then color = 11 end
 			if (framecounter - player.shoottime > constant_chargeshoottime) then
-				if(tmpvar1 == 17 or tmpvar1 == 19) then line(player.positionx+3, player.positiony+3, player.positionx+4, player.positiony+3, tmpvar2)
-				else line(player.positionx+3, player.positiony+2, player.positionx+4, player.positiony+2, tmpvar2) end
+				if(sprite == 17 or sprite == 19) then line(px + 3, py + 3, px + 4, py + 3, color)
+				else line(px + 3, py + 2, px + 4, py + 2, color) end
 			elseif (framecounter - player.shoottime > constant_chargeshoottime/2) then
-				if(tmpvar1 == 17 or tmpvar1 == 19) then pset(player.positionx+3, player.positiony+3, tmpvar2)
-				else pset(player.positionx+3, player.positiony+2, tmpvar2) end
+				if(sprite == 17 or sprite == 19) then pset(px + 3, py + 3, color)
+				else pset(px + 3, py + 2, color) end
 			end
 		end
 	end
 
-	--print(cheatstate, player.positionx, player.positiony - 6)
+	print(currentroom, player.positionx, player.positiony - 6)
 
 	-- draw popup if needed
 	if (gamestate == game_state_popup or gamestate == game_state_end) then
@@ -513,10 +541,7 @@ function updatecheat()
 		cheatstate += 1
 		if(cheatstate > count(cheatsequence)) then
 			cheatstate = 1
-			player.djumpenable = true
-			player.shootenable = true
-			player.chargeshootenable = true
-			player.invulnerable = true
+			player.djumpenable, player.shootenable, player.chargeshootenable, player.invulnerable = true, true, true, true
 		end
 	end
 end
@@ -525,18 +550,10 @@ end
 -- ************************************************************************ player functions ************************************************************************
 -- initialize the player special unit
 function initializeplayer()
-	player = newunit(56, 112, 1, 1, unit_type_player, newanimation(17, 2, 30))
-	player.healthpoint = 3
-	player.djumpavailable = true
-	player.shoottime = 0
-	player.action = unit_state_idle
-	player.framedammage = 0
-	player.dammagetime = 0
-
-	player.shootenable = false
-	player.djumpenable = false
-	player.chargeshootenable = false
-	player.invulnerable = false
+	player = newunit(56, 112, unit_type_player, newanimation(17, 2, 30))
+	player.healthpoint, player.djumpavailable, player.shoottime = 3, true, 0
+	player.action, player.framedammage, player.dammagetime = unit_state_idle, 0, 0
+	player.djumpenable, player.shootenable, player.chargeshootenable, player.invulnerable = false, false, false, false
 
 	-- attach more animation
 	player.animations[unit_state_dead] = newanimation(16, 1, 5)
@@ -544,32 +561,6 @@ function initializeplayer()
 	player.animations[unit_state_jump] = newanimation(20, 1, 5)
 	player.animations[unit_state_djump] = newanimation(20, 1, 5)
 	player.animations[unit_state_falling] = newanimation(20, 1, 5)
-end
-
--- reset player state
-function resetplayer()
-	player.positionx = 56
-	player.positiony = 112
-	player.speedx = 0
-	player.speedy = 0
-	player.state = unit_state_idle
-	player.action = unit_state_idle
-	player.healthpoint = 3
-	player.direction = 1
-	player.pose = 0
-	player.dammagetime = 0
-	player.visible = true
-	player.framedammage = 0
-	player.djumpavailable = true
-	player.shoottime = 0
-
-	player.shootenable = false
-	player.djumpenable = false
-	player.chargeshootenable = false
-
-	killboard.walker = 0
-	killboard.jumper = 0
-	killboard.flyer = 0
 end
 
 function setplayerposition(x, y)
@@ -584,7 +575,7 @@ function setplayerposition(x, y)
 			break
 		end
 	end
-	if (not found) then				-- bbegening position
+	if (not found) then				-- begining position
 		player.positionx = 56
 		player.positiony = 112
 		currentroom = 1
@@ -688,25 +679,23 @@ function updateplayeraction()
 	elseif (controllerbuttondown(button_action)) then
 		player.shoottime = controllergetstatechangetime(button_action)
 	elseif (controllerbuttonup(button_action)) then
+		-- initialize a bullet unit
+		local bullet = initializeparticule(player.positionx + player.direction*(8*player.sizex - 2), player.positiony, newanimation(249, 1, 5), 50)
 		if (controllergetstatechangetime(button_action) - player.shoottime > constant_chargeshoottime and player.chargeshootenable) then
-			local bullet = initializeparticule(player.positionx + player.direction*(8*player.sizex - 2) - player.direction*5, player.positiony+1, newanimation(249, 1, 5), 50)
 			bullet.speedx = player.direction*5
-			bullet.sizey = 0.7
 			bullet.damage = 5
-			bullet.direction = player.direction
-			bullet.gravityafected = false
-			bullet.traversable = true
 		else
-			local bullet = initializeparticule(player.positionx + player.direction*(8*player.sizex - 2) - player.direction*10, player.positiony, newanimation(250, 1, 5), 50)
 			bullet.speedx = player.direction*10
-			bullet.sizey = 0.7
 			bullet.damage = 1
-			bullet.direction = player.direction
-			bullet.gravityafected = false
-			bullet.traversable = true
 			sfx(3)
 		end
+		bullet.positionx -= bullet.speedx
+		bullet.sizey = 0.7
+		bullet.direction = player.direction
+		bullet.gravityafected = false
+		bullet.traversable = true
 
+		-- change player state machine
 		if(player.state == unit_state_idle) then
 			player.statetime = 0
 		end
@@ -730,16 +719,13 @@ function updateplayerdammage()
 			player.dammagetime += 1
 			player.visible = false
 
-			local impact = initializeparticule(player.positionx, player.positiony, newanimation(221, 3, 3), 9)
+			local impact = initializeparticule(player.positionx, player.positiony, newanimation(221, 3, 4), 12)
 			impact.pose = 3
-			impact.speedx = player.speedx
-			impact.speedy = player.speedy
-			impact.environementafected = false
-			impact.gravityafected = true
+			impact.speedx, impact.speedy = player.speedx, player.speedy
+			impact.environementafected, impact.gravityafected = false, true
 		end
 	elseif (player.dammagetime >= constant_invulnerabilitytime) then
-		player.dammagetime = 0
-		player.visible = true
+		player.dammagetime, player.visible = 0, true
 	else
 		player.dammagetime += 1
 		player.visible = not player.visible
@@ -752,13 +738,10 @@ end
 -- ************************************************************************ ennemy functions ************************************************************************
 -- initialize walker ennemy
 function initializewalker(x, y)
-	local ennemy  = newunit(x, y, 1, 1, unit_type_ennemy_walker, newanimation(49, 2, 17))
-	ennemy.healthpoint = 1
-	ennemy.damage = 1
-
-	-- behaviour
-	ennemy.update = updatewalker
-	ennemy.controller = controllerwalker
+	local ennemy  = newunit(x, y, unit_type_ennemy_walker, newanimation(49, 2, 17))
+	ennemy.healthpoint, ennemy.damage = 1, 1
+	ennemy.update, ennemy.controller = updatewalker, controllerwalker
+	ennemy.state = unit_state_walk
 
 	-- attach more animation
 	ennemy.animations[unit_state_dead] = newanimation(49, 1, 1)
@@ -767,34 +750,31 @@ function initializewalker(x, y)
 end
 
 function controllerwalker(unit)
+	local px, py, dir = unit.positionx, unit.positiony, unit.direction
+
 	-- avoid falling
-	if (unit.direction < 0 and not checkflag(unit.positionx + 7, unit.positiony + 8, flag_solid) and not checkflag(unit.positionx + 7, unit.positiony + 8, flag_traversable)) then
-		unit.direction = -unit.direction
-	elseif (unit.direction > 0 and not checkflag(unit.positionx, unit.positiony + 8, flag_solid) and not checkflag(unit.positionx, unit.positiony + 8, flag_traversable)) then
-		unit.direction = -unit.direction
+	if (dir < 0 and not checkflag(px + 7, py + 8, flag_solid) and not checkflag(px + 7, py + 8, flag_traversable)) then
+		unit.direction = -dir
+	elseif (dir > 0 and not checkflag(px, py + 8, flag_solid) and not checkflag(px, py + 8, flag_traversable)) then
+		unit.direction = -dir
 
 	-- avoid wall collision
-	elseif (unit.direction < 0 and (checkflag(unit.positionx + 8, unit.positiony + 7, flag_solid) or checkflag(unit.positionx + 8, unit.positiony + 7, flag_traversable))) then
-		unit.direction = -unit.direction
-	elseif (unit.direction > 0 and (checkflag(unit.positionx - 1, unit.positiony + 7, flag_solid) or checkflag(unit.positionx - 1, unit.positiony + 7, flag_traversable))) then
-		unit.direction = -unit.direction
+	elseif (dir < 0 and (checkflag(px + 8, py + 7, flag_solid) or checkflag(px + 8, py + 7, flag_traversable))) then
+		unit.direction = -dir
+	elseif (dir > 0 and (checkflag(px - 1, py + 7, flag_solid) or checkflag(px - 1, py + 7, flag_traversable))) then
+		unit.direction = -dir
 
 	-- avoid exit room
-	elseif (unit.direction < 0 and not inroom(unit.positionx + 8, unit.positiony + 7, currentroom)) then
-		unit.direction = -unit.direction
-	elseif (unit.direction > 0 and not inroom(unit.positionx - 1, unit.positiony + 7, currentroom)) then
-		unit.direction = -unit.direction
+	elseif (dir < 0 and not inroom(px + 8, py + 7, currentroom)) then
+		unit.direction = -dir
+	elseif (dir > 0 and not inroom(px - 1, py + 7, currentroom)) then
+		unit.direction = -dir
 	end
 end
 
 function updatewalker(unit)
-	local pstate = unit.state
 	unit.statetime += 1
-
-	unit.state = unit_state_walk
 	unit.speedx = -unit.direction * constant_walkerspeed
-
-	if (unit.state != pstate) then unit.statetime = 0 end
 	unit.pose = flr(unit.statetime / unit.animations[unit.state].time) % unit.animations[unit.state].frames
 end
 
@@ -802,17 +782,11 @@ end
 
 -- initialize jumper ennemy
 function initializejumper(x, y)
-	local ennemy  = newunit(x, y, 2, 2, unit_type_ennemy_jumper, newanimation(10, 2, 20))
-	ennemy.healthpoint = 5
-	ennemy.targetx = x
-	ennemy.targety = y
-	ennemy.targetdistance = 0
-	ennemy.damage = 1
+	local ennemy  = newunit(x, y, unit_type_ennemy_jumper, newanimation(10, 2, 20), 2, 2)
+	ennemy.healthpoint, ennemy.damage = 5, 1
+	ennemy.targetx, ennemy.targety, ennemy.targetdistance = x, y, 0
 	ennemy.traversable = true
-
-	-- behaviour
-	ennemy.update = updatejumper
-	ennemy.controller = controllerjumper
+	ennemy.update, ennemy.controller = updatejumper, controllerjumper
 
 	-- attach more animation
 	ennemy.animations[unit_state_dead] = newanimation(10, 2, 20)
@@ -823,35 +797,32 @@ end
 function controllerjumper(unit)
 	local d = distance(unit, player)
 	if (d <= 40 and d >= 4) then
-		unit.targetx = player.positionx
-		unit.targety = player.positiony
-		unit.targetdistance = d
+		unit.targetx, unit.targety, unit.targetdistance = player.positionx, player.positiony, d
 	elseif (unit.statetime > constant_random_behaviour) then
-		unit.targetx = unit.positionx - 16 + rnd(32)
-		unit.targety = unit.positiony - rnd(1)
+		unit.targetx, unit.targety = unit.positionx - 16 + rnd(32), unit.positiony - rnd(1)
 		unit.targetdistance = abs(unit.targetx - unit.positionx)
 		unit.statetime = 0
 	end
 end
 
 function updatejumper(unit)
-	local pstate = unit.state
+	local pstate, px = unit.state, unit.positionx
 	unit.statetime += 1
 
 	if (unit.state == unit_state_idle) then
 		unit.speedx = 0
-		if (abs(unit.targetx - unit.positionx) > 4 and unit.statetime >= 10) then
+		if (abs(unit.targetx - px) > 4 and unit.statetime >= 10) then
 			unit.state = unit_state_jump
 			unit.speedy = -constant_jumperspeedy
 		end
 	elseif (unit.state == unit_state_jump) then
-		if (unit.targetx - unit.positionx > 4) then
+		if (unit.targetx - px > 4) then
 			unit.speedx = constant_jumperspeedx
-		elseif (unit.targetx - unit.positionx < -4) then
+		elseif (unit.targetx - px < -4) then
 			unit.speedx = -constant_jumperspeedx
 		else unit.speedx = 0 end
 
-		if (checkflag(unit.positionx-1, unit.positiony + 8*unit.sizey, flag_solid) or checkflag(unit.positionx + 8*unit.sizex -2, unit.positiony + 8*unit.sizey, flag_solid) ) then
+		if (checkflag(px - 1, unit.positiony + 8 * unit.sizey, flag_solid) or checkflag(px + 8 * unit.sizex - 2, unit.positiony + 8 * unit.sizey, flag_solid) ) then
 			unit.state = unit_state_idle
 		--elseif (checkflag(unit.positionx-1, unit.positiony + 8*unit.sizey, flag_traversable) or checkflag(unit.positionx + 8*unit.sizex -2, unit.positiony + 8*unit.sizey, flag_traversable) ) then
 		--	unit.state = unit_state_idle
@@ -873,18 +844,11 @@ end
 
 -- initialize flyer ennemy
 function initializeflyer(x, y)
-	local ennemy  = newunit(x, y, 2, 2, unit_type_ennemy_flyer, newanimation(44, 2, 20))
-	ennemy.healthpoint = 3
-	ennemy.targetx = x
-	ennemy.targety = y
-	ennemy.targetdistance = 0
-	ennemy.damage = 1
-	ennemy.gravityafected = false
-	ennemy.traversable = true
-
-	-- behaviour
-	ennemy.update = updateflyer
-	ennemy.controller = controllerflyer
+	local ennemy  = newunit(x, y, unit_type_ennemy_flyer, newanimation(44, 2, 20), 2, 2)
+	ennemy.healthpoint, ennemy.damage = 3, 1
+	ennemy.targetx, ennemy.targety, ennemy.targetdistance = x, y, 0
+	ennemy.gravityafected, ennemy.traversable = false, true
+	ennemy.update, ennemy.controller = updateflyer, controllerflyer
 
 	-- attach more animation
 	ennemy.animations[unit_state_dead] = newanimation(44, 2, 20)
@@ -895,12 +859,9 @@ end
 function controllerflyer(unit)
 	local d = distance(unit, player)
 	if (d <= 64 and d >= 4) then
-		unit.targetx = player.positionx
-		unit.targety = player.positiony
-		unit.targetdistance = d
+		unit.targetx, unit.targety, unit.targetdistance = player.positionx, player.positiony, d
 	elseif (unit.statetime > constant_random_behaviour) then
-		unit.targetx = unit.positionx - 16 + rnd(32)
-		unit.targety = unit.positiony
+		unit.targetx, unit.targety = unit.positionx - 16 + rnd(32), unit.positiony
 		unit.targetdistance = abs(unit.targetx - unit.positionx)
 		unit.statetime = 0
 	end
@@ -942,7 +903,7 @@ end
 -- ************************************************************************ particles, particule generators and ennemy generators functions ************************************************************************
 -- initialize particle
 function initializeparticule(x, y, idleanimation, life)
-	local particule = newunit(x, y, 1, 1, unit_type_particule, idleanimation)
+	local particule = newunit(x, y, unit_type_particule, idleanimation)
 	particule.life = life
 	particule.update = updateparticle
 	particule.environementafected = true
@@ -962,25 +923,19 @@ end
 -- initialize particle generator
 -- positionate a lot of parameter in default value (to keep an initialize function small)
 function initializeparticulegenerator(x, y, idleanimation, particleanimation, spawntime)
-	local generator = newunit(x, y, 1, 1, unit_type_particule_generator, idleanimation)
+	local generator = newunit(x, y, unit_type_particule_generator, idleanimation)
 
 	-- modifiable attribute to twick to create a full customized particule generator
-	generator.plife = 50
-	generator.plifedispertion = 0
-	generator.panimation = particleanimation	-- particule idle animation
-	generator.pgravity = false 					-- particule are affected by gravity
-	generator.pspeedx = 0						-- particule initial speed on x axis
-	generator.pspeedy = 0						-- particule initial speed on y axis
-	generator.ppositionx = 0					-- particule initial position on x axis
-	generator.ppositiony = 0					-- particule initial position on y axis
-	generator.pdamage = 0						-- particule dammage
-	generator.pdirection = 1					-- particule initial direction. zero mean that the particule direction is random
-	generator.spawntime = spawntime 			-- spawn interval time
-	generator.spawntimedispertion = 0			-- random interval for spawn time
+	generator.plife, generator.plifedispertion, generator.pdamage = 50, 0, 0	-- particle life and dammage
+	generator.plifedispertion = 0												-- particle life dispertion
+	generator.panimation = particleanimation									-- particule idle animation
+	generator.pgravity, generator.pdirection = false, 1							-- particule are affected by gravity, initial direction (0 means random)
+	generator.pspeedx, generator.pspeedy = 0, 0									-- particule initial speed
+	generator.ppositionx, generator.ppositiony = 0, 0							-- particule initial position
+	generator.spawntime, generator.spawntimedispertion = spawntime, 0 			-- spawn interval time and related dispertion
 
 	-- machine state related attributes
-	generator.time = 0
-	generator.nextspawntime = 0
+	generator.time, generator.nextspawntime = 0, 0
 	generator.update = updateparticulegenerator
 	add(unitlist, generator)
 	return generator
@@ -993,52 +948,33 @@ function updateparticulegenerator(unit)
 
 	if (unit.time >= unit.nextspawntime) then
 		local particule = initializeparticule(unit.positionx + unit.ppositionx, unit.positiony + unit.ppositiony, unit.panimation, unit.plife + rnd(unit.plifedispertion))
-		particule.gravityafected = unit.pgravity
-		particule.speedx = unit.pspeedx
-		particule.speedy = unit.pspeedy
-		particule.damage = unit.pdamage
-
+		particule.gravityafected, particule.speedx, particule.speedy, particule.damage = unit.pgravity, unit.pspeedx, unit.pspeedy, unit.pdamage
 		if (unit.pdirection == 0) then particule.direction = 3*rnd(1)-1
 		else particule.direction = unit.pdirection end
-
-		unit.time = 0
-		unit.nextspawntime = unit.spawntime - rnd(unit.spawntimedispertion)
+		unit.time, unit.nextspawntime = 0, unit.spawntime - rnd(unit.spawntimedispertion)
 	end
 end
 
 -- place standard firework (generate some smoke)
 function placefire(x, y)
 	local fire = initializeparticulegenerator(x, y, newanimation(203,2,5), newanimation(240, 2, 10), 15)
-	fire.gravityafected = false
-	fire.pspeedy = -1
-	fire.plife = 20
-	fire.plifedispertion = 20
-	fire.spawntimedispertion = 4
-	fire.damage = 1
-	fire.pdirection = 0
-
-	fire.pose = rnd(1)
-	fire.time = rnd(fire.spawntime)
+	fire.gravityafected, fire.spawntimedispertion = false, 4
+	fire.pspeedy, fire.pdirection, fire.plife, fire.plifedispertion = -1, 0, 20, 20
+	fire.damage, fire.pose, fire.time = 1, rnd(1), rnd(fire.spawntime)
 	fire.nextspawntime = rnd(fire.spawntime) + rnd(fire.spawntimedispertion)
 end
 
 -- place standard acid block (generate some buble)
 function placeacid(x, y)
 	local acid = initializeparticulegenerator(x, y, newanimation(224,2,20), newanimation(219, 2, 3), 100)
-	acid.gravityafected = false
-	acid.plife = 6
-	acid.spawntimedispertion = 40
-	acid.ppositiony = -8
-	acid.damage = 1
-
-	acid.pose = rnd(1)
-	acid.time = rnd(acid.spawntime)
-	acid.nextspawntime = rnd(acid.spawntime) + rnd(acid.spawntimedispertion)
+	acid.gravityafected, acid.spawntimedispertion = false, 40
+	acid.ppositiony, acid.plife = -8, 6
+	acid.damage, acid.pose, acid.time, acid.nextspawntime = 1, rnd(1), rnd(acid.spawntime), rnd(acid.spawntime) + rnd(acid.spawntimedispertion)
 end
 
 -- initialize ennemy generators
 function initializeennemygenerator(x, y, ennemytype, spawntime, ennemycount)
-	local generator = newunit(x, y, 1, 1, unit_type_ennemy_generator, newanimation(48,1,1))
+	local generator = newunit(x, y, unit_type_ennemy_generator, newanimation(48,1,1))
 	generator.gravityafected = false
 	generator.ennemytype = ennemytype
 	generator.ppositionx = 0
@@ -1060,15 +996,15 @@ function updateennemygenerator(unit)
 	unit.time += 1
 
 	if (unit.time >= unit.nextspawntime) then
-		if (unit.ennemytype == unit_type_ennemy_walker) then initializewalker(unit.positionx + unit.ppositionx, unit.positiony + unit.ppositiony)
-		elseif (unit.ennemytype == unit_type_ennemy_jumper) then initializejumper(unit.positionx + unit.ppositionx, unit.positiony + unit.ppositiony)
-		elseif (unit.ennemytype == unit_type_ennemy_flyer) then initializeflyer(unit.positionx + unit.ppositionx, unit.positiony + unit.ppositiony)
+		local x, y, type = unit.positionx + unit.ppositionx, unit.positiony + unit.ppositiony, unit.ennemytype
+		if (type == unit_type_ennemy_walker) then initializewalker(x, y)
+		elseif (type == unit_type_ennemy_jumper) then initializejumper(x, y)
+		elseif (type == unit_type_ennemy_flyer) then initializeflyer(x, y)
 		end
 
 		unit.ennemycount -= 1
 		if (unit.ennemycount <= 0) then unit.state = unit_state_dead end
-		unit.time = 0
-		unit.nextspawntime = unit.spawntime
+		unit.time, unit.nextspawntime = 0, unit.spawntime
 	end
 end
 
@@ -1076,13 +1012,14 @@ end
 
 -- initialize room : place unit of correct type to correct position depending of the room structure
 function initializeroom(room)
-	-- place dead body
+	-- initialize dead body list if not present
 	if (not rooms[room].deadbodylist) then
 		rooms[room].deadbodylist = {}
 	end
+
+	-- place dead body
 	for pos in all(rooms[room].deadbodylist) do
-		-- stupidly huge unittype to avoid collision system
-		local body = newunit(pos.positionx, pos.positiony, 1, 1, unit_type_useless, newanimation(16,1,1))
+		local body = newunit(pos.positionx, pos.positiony, unit_type_useless, newanimation(16,1,1))
 		body.environementafected = false
 		body.gravityafected = false
 		add(unitlist, body)
@@ -1091,15 +1028,16 @@ function initializeroom(room)
 	-- instanciate all unit of room
 	newunitlist = rooms[room][6]
 	for i = 1, count(newunitlist) do
-		if (newunitlist[i][3] == unit_type_generator_fire) then placefire(newunitlist[i][1]*8, newunitlist[i][2]*8)
-		elseif (newunitlist[i][3] == unit_type_generator_acid) then placeacid(newunitlist[i][1]*8, newunitlist[i][2]*8)
-		elseif (newunitlist[i][3] == unit_type_ennemy_walker) then initializewalker(newunitlist[i][1]*8, newunitlist[i][2]*8)
-		elseif (newunitlist[i][3] == unit_type_ennemy_jumper) then initializejumper(newunitlist[i][1]*8, newunitlist[i][2]*8)
-		elseif (newunitlist[i][3] == unit_type_ennemy_flyer) then initializeflyer(newunitlist[i][1]*8, newunitlist[i][2]*8)
-		elseif (newunitlist[i][3] == unit_type_scenario) then
+		local x, y, type = newunitlist[i][1]*8, newunitlist[i][2]*8, newunitlist[i][3]
+		if (type == unit_type_generator_fire) then placefire(x, y)
+		elseif (type == unit_type_generator_acid) then placeacid(x, y)
+		elseif (type == unit_type_ennemy_walker) then initializewalker(x, y)
+		elseif (type == unit_type_ennemy_jumper) then initializejumper(x, y)
+		elseif (type == unit_type_ennemy_flyer) then initializeflyer(x, y)
+		elseif (type == unit_type_scenario) then
 			local item = scenario[newunitlist[i][4]]
 			if (item and not item[2]) then
-				placescenario(newunitlist[i][1]*8, newunitlist[i][2]*8, item[1], newunitlist[i][4])
+				placescenario(x, y, item[1], newunitlist[i][4])
 			end
 		end
 	end
@@ -1116,24 +1054,24 @@ end
 
 -- update current room depending on player position
 function updateroom()
-	if (mid(player.positionx, rooms[currentroom][1], rooms[currentroom][1] + rooms[currentroom][3]) == player.positionx) and (mid(player.positiony, rooms[currentroom][2], rooms[currentroom][2] + rooms[currentroom][4]) == player.positiony) then
+	local px, py, tmproom = player.positionx, player.positiony, rooms[currentroom]
+
+	if (mid(px, tmproom[1], tmproom[1] + tmproom[3]) == px) and (mid(py, tmproom[2], tmproom[2] + tmproom[4]) == py) then
 		return
 	else 
-		for i = 1, count(rooms[currentroom][5]) do
-			local r = rooms[currentroom][5][i]
-			if (mid(player.positionx, rooms[r][1], rooms[r][1] + rooms[r][3]) == player.positionx) and (mid(player.positiony, rooms[r][2], rooms[r][2] + rooms[r][4]) == player.positiony) then
+		for i = 1, count(tmproom[5]) do
+			local r = tmproom[5][i]
+			if (mid(px, rooms[r][1], rooms[r][1] + rooms[r][3]) == px) and (mid(py, rooms[r][2], rooms[r][2] + rooms[r][4]) == py) then
 	   			currentroom = r
+	   			tmproom = rooms[currentroom]
 	   			break
 	   		end
 		end
 
-		-- swap tmpunitlist and unitlist
 		tmpunitlist, unitlist = unitlist, tmpunitlist
 		initializeroom(currentroom)
 		gamestate = game_state_camtransition
-
-		cam.targetx = mid(player.positionx - 64, rooms[currentroom][1], rooms[currentroom][1] + rooms[currentroom][3] - 128)
-		cam.targety = mid(player.positiony - 64, rooms[currentroom][2], rooms[currentroom][2] + rooms[currentroom][4] - 128)
+		cam.targetx, cam.targety = mid(px - 64, tmproom[1], tmproom[1] + tmproom[3] - 128), mid(py - 64, tmproom[2], tmproom[2] + tmproom[4] - 128)
 	end
 end
 
@@ -1153,11 +1091,6 @@ function updatebossroom()
 		-- remove all plateform
 		for pos in all(bossroomplateform) do
 			mset(pos[1], pos[2], 0)
-		end
-
-		-- replace layer by destructible sprites
-		for bossunit in all(boss.wave[boss.currentwave].layer) do
-			fset(bossunit[3], flag_destructible, true)
 		end
 
 		-- get ennemy count to initialize depending on wave number
@@ -1202,6 +1135,12 @@ function updatebossroom()
 		else
 			boss.state += 1
 		end
+
+		-- replace layer by destructible sprites
+		for bossunit in all(boss.wave[boss.currentwave].layer) do
+			fset(bossunit[3], flag_destructible, true)
+		end
+
 		boss.timer += 1
 
 	-- wave 1b
@@ -1210,25 +1149,19 @@ function updatebossroom()
 		if (boss.timer > 20) then
 			boss.timer = 0
 			local bullet = initializeparticule(828, 304, newanimation(239, 1, 5), 50)
-
-			bullet.speedx = player.positionx - bullet.positionx
-			bullet.speedy = player.positiony - bullet.positiony
+			bullet.speedx, bullet.speedy = player.positionx - bullet.positionx, player.positiony - bullet.positiony
 			local d = sqrt(bullet.speedx*bullet.speedx + bullet.speedy*bullet.speedy)
-			bullet.speedx = (5*bullet.speedx / d) /2
-			bullet.speedy = (5*bullet.speedy / d) /2
+			bullet.speedx, bullet.speedy = 2.5 * bullet.speedx / d, 2.5 * bullet.speedy / d
 
 			bullet.type = unit_type_ennemy_particule
-			bullet.sizey = 0.7
-			bullet.damage = 1
-			bullet.gravityafected = false
-			bullet.traversable = true
+			bullet.sizey, bullet.damage = 0.7, 1
+			bullet.gravityafected, bullet.traversable = false, true
 		end
 
 		for pos in all(boss.wave[boss.currentwave].layer) do
-			if(mget(pos[1], pos[2]) == 0) then
-				-- check if a layer is destroyed
+			if(mget(pos[1], pos[2]) == 0) then -- check if a layer is partialy destroyed
 				for pos2 in all(boss.wave[boss.currentwave].layer) do
-					destroy(8*pos2[1], 8*pos2[2])
+					destroy(8 * pos2[1], 8 * pos2[2])
 				end
 
 				-- increment wave or quit
@@ -1236,21 +1169,11 @@ function updatebossroom()
 				if(boss.currentwave > 3) then
 					boss.state += 1
 					boss.timer = 0
-					destroy(103*8, 37*8)
-					destroy(104*8, 37*8)
+					destroy(824, 296)
+					destroy(832, 296)
 
-					local tmp = initializeparticule(103*8, 37*8, newanimation(8,1,10), 100)
-						tmp.damage = 0.1
-						tmp.sizex = 2
-						tmp.sizey = 2
-					--tmp = initializeparticule(104*8, 37*8, newanimation(58,1,10), 100)
-					--	tmp.damage = 0.1
-					--tmp = initializeparticule(104*8, 36*8, newanimation(58,1,10), 100)
-					--	tmp.damage = 0.1
-					--	tmp.flipverticaly = true
-					--tmp = initializeparticule(103*8, 36*8, newanimation(57,1,10), 100)
-					--	tmp.damage = 0.1
-					--	tmp.flipverticaly = true
+					local tmp = initializeparticule(824, 296, newanimation(8,1,10), 100)
+						tmp.sizex, tmp.sizey, tmp.damage = 2, 2, 0.001
 				else boss.state = 1 end
 				break
 			end
@@ -1261,7 +1184,7 @@ function updatebossroom()
 		boss.timer += 1
 		if(boss.timer > 70) then
 			destroy(888, 368)
-			cam.popuptext = {"congratulation !","you won !", "press enter to quit"}
+			cam.popuptext = {"congratulations !","you won !", "press enter to quit"}
 			gamestate = game_state_end
 		end
 	end
@@ -1275,50 +1198,12 @@ function placescenario(x, y, sprite, index)
 	local block
 	if(sprite != 1) then
 		block = initializeparticulegenerator(x, y, newanimation(32,1,1), newanimation(sprite, 1, 1), 60)
-		block.plife = block.spawntime+1
-		block.pdirection = 0
-		block.type = unit_type_scenario
+		block.plife, block.pdirection, block.type = block.spawntime + 1, 0, unit_type_scenario
 	else
-		block = newunit(x, y, 1, 1, unit_type_scenario, newanimation(1,1,1))
+		block = newunit(x, y, unit_type_scenario, newanimation(1,1,1))
 		add(unitlist, block)
 	end
-
-	block.index = index
-	block.burnafterreading = true
-end
-
-function resetbosssystem()
-	mset(111, 46, 0)
-	boss.state = 0
-	boss.timer = 0
-	boss.currentwave = 1
-
-	boss.wave = {
-	{
-		ennemytype = unit_type_ennemy_walker,
-		layer = {
-			{101,33,39},												{106,33,40},
-			{101,34,39},												{106,34,40},
-			{101,35,39},												{106,35,40},
-			{101,36,55},												{106,36,56}
-		}	
-	}, {
-		ennemytype = unit_type_ennemy_jumper,
-		layer = {
-						{102,33,37},						{105,33,38},
-						{102,34,37},						{105,34,38},
-						{102,35,37},						{105,35,38},
-						{102,36,53},						{105,36,54}
-		}
-	},{
-		ennemytype = unit_type_ennemy_flyer,
-		layer = {
-									{103,33,41},{104,33,42},
-									{103,34,41},{104,34,42},
-									{103,35,41},{104,35,42},
-									{103,36,41},{104,36,42}
-		}
-	}}
+	block.index, block.burnafterreading = index, true
 end
 
 
@@ -1326,12 +1211,8 @@ end
 -- move object to delta and check collision with environement
 -- compactable si develloppement des variable local
 function updatephysics(unit, step)
-	local x = unit.positionx
-	local y = unit.positiony
-	local sx = 8 * unit.sizex
-	local sy = 8 * unit.sizey
-	local callback = _colisionmatrix[type_environement][unit.type]
-	local notraversable = not unit.traversable
+	local x, y, sx, sy = unit.positionx, unit.positiony, 8 * unit.sizex, 8 * unit.sizey
+	local callback, notraversable = _colisionmatrix[type_environement][unit.type], not unit.traversable
 
 	-- aply gravity if unit is not touching ground
 	if (unit.gravityafected) then
@@ -1343,8 +1224,7 @@ function updatephysics(unit, step)
 		end
 	end
 
-	local dx = step * unit.speedx
-	local dy = step * unit.speedy
+	local dx, dy = step * unit.speedx, step * unit.speedy
 
 	if (callback) then
 		-- check left and right collision with environement
@@ -1396,9 +1276,7 @@ function updatephysics(unit, step)
 		x += dx
 		y += dy
 	end
-
-	unit.positionx = x
-	unit.positiony = y
+	unit.positionx, unit.positiony = x, y
 end
 
 -- environement collision callbacks
@@ -1411,9 +1289,7 @@ function callbackphysicsenvironementunit(unit, blockflag, colisionaxis)
 end
 function callbackphysicsenvironementparticule(unit, blockflag, colisionaxis)
 	if (unit.environementafected) then
-		local x = unit.positionx
-		local y = unit.positiony
-
+		local x, y = unit.positionx, unit.positiony
 		if (unit.damage >= 4) then
 			if (unit.speedx > 0) then
 				if (checkflag(x + 8, y + 3, flag_destructible) or checkflag(x + 8, y + 4, flag_destructible) ) then
@@ -1428,12 +1304,8 @@ function callbackphysicsenvironementparticule(unit, blockflag, colisionaxis)
 
 			if(unit.damage <= 0) then
 				local dead = initializeparticule(x, y, newanimation(251, 5, 1), 5)
-				dead.gravityafected = false
-				dead.direction = unit.direction
-				
-				unit.speedx = 0
-				unit.life = 0
-				unit.visible = false
+				dead.gravityafected, dead.direction = false, unit.direction				
+				unit.speedx, unit.life, unit.visible = 0, 0, false
 			end
 		elseif (unit.damage > 0) then
 			if(unit.sizex <= 1) then
@@ -1441,18 +1313,11 @@ function callbackphysicsenvironementparticule(unit, blockflag, colisionaxis)
 				dead.gravityafected = false
 				dead.direction = unit.direction
 			else -- boss eye explosion
-				for i = 1, 5 do
-					local dead = initializeparticule(x +8, y +8, newanimation(7, 1, 10), 100)
-					dead.direction = unit.direction
-					dead.speedx = (rnd(10) - 5.0)/2.5
-					dead.speedy = constant_jumpspeed + (rnd(10) - 5.0)/2.5
-				end
-
-				for i = 1, 5 do
-					local dead = initializeparticule(x +8, y +8, newanimation(205, 3, 10), 30)
-					dead.direction = unit.direction
-					dead.speedx = (rnd(10) - 5.0)/2.5
-					dead.speedy = constant_jumpspeed + (rnd(10) - 5.0)/2.5
+				for i = 1, 10 do
+					local dead
+					if( i % 2 == 1) then dead = initializeparticule(x + 8, y + 8, newanimation(7, 1, 10), 100)
+					else dead = initializeparticule(x + 8, y + 8, newanimation(205, 3, 10), 30) end
+					dead.direction, dead.speedx, dead.speedy = unit.direction, (rnd(10) - 5.0) / 2.5, constant_jumpspeed + (rnd(10) - 5.0) / 2.5
 				end
 			end
 
@@ -1468,7 +1333,6 @@ function callbackphysicsenvironementparticule(unit, blockflag, colisionaxis)
 		unit.speedy = 0
 	end
 end
-
 
 
 -- ************************************************************************ unit collision functions ************************************************************************
@@ -1516,8 +1380,9 @@ end
 
 -- check if two unit currently collide (overlap)
 function collisioncheck(unit1, unit2)
-	if ( abs(unit1.positionx + 4*unit1.sizex - (unit2.positionx + 4*unit2.sizex)) < 4*(unit1.sizex + unit2.sizex) - 1 ) then
-		if ( abs(unit1.positiony + 4*unit1.sizey - (unit2.positiony + 4*unit2.sizey)) < 4*(unit1.sizey + unit2.sizey) - 1 ) then
+	local sx1, sy1, sx2, sy2 = 4*unit1.sizex, 4*unit1.sizey, 4*unit2.sizex, 4*unit2.sizey
+	if ( abs(unit1.positionx + sx1 - (unit2.positionx + sx2)) < sx1 + sx2 - 1 ) then
+		if ( abs(unit1.positiony + sy1 - (unit2.positiony + sy2)) < sy1 + sy2 - 1 ) then
 			return true
 		end
 	end
@@ -1527,34 +1392,22 @@ end
 -- units collision callbacks
 function callbackcollisionparticuleunit(unit1, unit2)
 	-- begin
-	local particule
-	local unit
-	if(unit1.type == unit_type_particule) then
-		particule = unit1
-		unit = unit2
-	else
-		particule = unit2
-		unit = unit1
-	end
+	local particule, unit
+	if(unit1.type == unit_type_particule) then particule, unit = unit1, unit2
+	else particule, unit = unit2, unit1 end
 
 	-- collision interaction
 	if (particule.life > 0 and particule.damage > 0) then
 		local impact = initializeparticule(unit.positionx + unit.sizex*4 - 4 + 0.2*particule.speedx, unit.positiony + unit.sizey*4 - 4 + 0.2*particule.speedy, newanimation(205, 3, 3), 9)
 			impact.pose = 3
-			impact.environementafected = false
-			impact.speedx = particule.direction * 0.8
-			impact.gravityafected = false
-			impact.direction = particule.direction
+			impact.environementafected, impact.gravityafected = false, false
+			impact.speedx, impact.direction = particule.direction * 0.8, particule.direction
 
 		local dammage = particule.damage
 		particule.damage -= unit.healthpoint
 		unit.healthpoint -= dammage
 
-		if (particule.damage <= 0) then
-			particule.life = 0
-			particule.speedx = 0
-			particule.speedy = 0
-		end
+		if (particule.damage <= 0) then particule.life, particule.speedx, particule.speedy = 0, 0, 0 end
 		if (unit.healthpoint <= 0) then
 			unit.visible = false
 			sfx(6)
@@ -1564,11 +1417,9 @@ function callbackcollisionparticuleunit(unit1, unit2)
 			elseif (unit.type == unit_type_ennemy_flyer) then killboard.flyer += 1
 			end
 			
-			local skull = newunit(0, 15*8, 1, 1, unit_type_particule, newanimation(36, 1, 1))
-				skull.life = 30
-				skull.axis = 'x'
-				skull.update = updateparticle
-				add(hudunit, skull)
+			unit = newunit(0, 15*8, unit_type_particule, newanimation(36, 1, 1))
+			unit.life, unit.update = 30, updateparticle
+			add(hudunit, unit)
 		end
 	end
 end
@@ -1578,13 +1429,13 @@ function callbackcollisionplayerennemy(unit1, unit2)
 end
 function callbackcollisionplayerscenario(unit1, unit2)
 	-- get scenario unit in unit variable
-	local tmpvar1
-	if(unit1.type == unit_type_player) then tmpvar1 = unit2
-	else tmpvar1 = unit1 end
-	local item = scenario[tmpvar1.index]
+	local unit
+	if(unit1.type == unit_type_player) then unit = unit2
+	else unit = unit1 end
+	local item = scenario[unit.index]
 
 	-- mark scenario as read
-	if (tmpvar1.burnafterreading) then tmpvar1.state = unit_state_dead end
+	if (unit.burnafterreading) then unit.state = unit_state_dead end
 	item[2] = true
 	
 	-- give power to player
@@ -1595,27 +1446,26 @@ function callbackcollisionplayerscenario(unit1, unit2)
 		player.djumpenable = true
 		player.healthpoint = 3
 	elseif (item[4] == "cshoot") then
-		player.shootenable = true
-		player.chargeshootenable = true
+		player.shootenable, player.chargeshootenable = true, true
 		player.healthpoint = 3
 
 		-- place destructible wall and start transition animation
 		mset(79, 46, 94)
-		tmpvar1 = initializeparticule(632, 368, newanimation(210,2,5), 10)
-		tmpvar1.gravityafected = false
+		unit = initializeparticule(632, 368, newanimation(210,2,5), 10)
+		unit.gravityafected = false
 	elseif (item[4] == "key") then
 		player.healthpoint = 3
 
 		-- open boss room
-		destroy(112*8, 46*8)
+		destroy(896, 368)
+		scenario[5][2] = true
 	end
 
 	-- add item sprite to temporary hud list
 	if (item[1] != 1) then
-		local skull = newunit(0, 120, 1, 1, unit_type_particule, newanimation(item[1], 1, 1))
-		skull.life = 30
-		skull.update = updateparticle
-		add(hudunit, skull)
+		unit = newunit(0, 120, unit_type_particule, newanimation(item[1], 1, 1))
+		unit.life, unit.update = 30, updateparticle
+		add(hudunit, unit)
 	end
 
 	-- show popup
@@ -1628,14 +1478,14 @@ end
 -- ************************************************************************ rendering functions ************************************************************************
 function drawunit(unit)
 	if (unit.visible) then
-		spr(unit.animations[unit.state].start + unit.pose*unit.sizex, unit.positionx, unit.positiony, unit.sizex, unit.sizey, (unit.direction < 0), unit.flipverticaly)
+		spr(unit.animations[unit.state].start + unit.pose * unit.sizex, unit.positionx, unit.positiony, unit.sizex, unit.sizey, (unit.direction < 0))
 	end
 end
 
-function drawhudunit(unit, x, y)
+function drawhudunit(unit, offset)
 	if (unit.visible) then
-		rectfill(cam.x + unit.positionx + x, cam.y + unit.positiony + y, cam.x + unit.positionx + x +8, cam.y + unit.positiony + y +8, 0)
-		spr(unit.animations[unit.state].start + unit.pose, cam.x + unit.positionx + x, cam.y + unit.positiony + y, 1, 1)
+		rectfill(cam.x + unit.positionx + offset, cam.y + unit.positiony, cam.x + unit.positionx + offset + 8, cam.y + unit.positiony + 8, 0)
+		spr(unit.animations[unit.state].start + unit.pose, cam.x + unit.positionx + offset, cam.y + unit.positiony)
 	end
 end
 
@@ -1651,30 +1501,26 @@ end
 
 function updatecameraposition()
 	if (gamestate == game_state_camtransition) then
-		local dx = cam.targetx - cam.x
-		local dy = cam.targety - cam.y
+		local dx, dy = cam.targetx - cam.x, cam.targety - cam.y
 		local d = sqrt(dx*dx + dy*dy)
 		if(d < cam.speed) then
-			cam.x = cam.targetx
-			cam.y = cam.targety
+			cam.x, cam.y = cam.targetx, cam.targety
 		else
 			cam.x += cam.speed * dx / d
 			cam.y += cam.speed * dy / d
 		end
 	else
 		local tmproom = rooms[currentroom]
-		cam.x = mid(player.positionx - 64, tmproom[1], tmproom[1] + tmproom[3] - 128)
-		cam.y = mid(player.positiony - 64, tmproom[2], tmproom[2] + tmproom[4] - 128)
+		cam.x, cam.y = mid(player.positionx - 64, tmproom[1], tmproom[1] + tmproom[3] - 128), mid(player.positiony - 64, tmproom[2], tmproom[2] + tmproom[4] - 128)
 	end
 end
-
 
 
 -- ************************************************************************ controller functions ************************************************************************
 -- update all button state. parameter define the current frame
 -- if a button changing state is detected this time will be refered as the changing state time for the button
 function updatecontroller(time)
-	for i = 1, 6 do
+	for i = 1, 7 do
 		_controllerbuttonmap[i].previous = _controllerbuttonmap[i].state
 		_controllerbuttonmap[i].state = btn(i-1)
 		if (_controllerbuttonmap[i].previous != _controllerbuttonmap[i].state) then
@@ -1684,50 +1530,49 @@ function updatecontroller(time)
 end
 
 -- return boolean true if button state change from pressed to up this frame 
-function controllerbuttonup(button) return (not _controllerbuttonmap[button+1].state and _controllerbuttonmap[button+1].previous) end
+function controllerbuttonup(button) return (not _controllerbuttonmap[button].state and _controllerbuttonmap[button].previous) end
 
 -- return boolean true if button state change from up to pressed this frame
-function controllerbuttondown(button) return (_controllerbuttonmap[button+1].state and not _controllerbuttonmap[button+1].previous) end
+function controllerbuttondown(button) return (_controllerbuttonmap[button].state and not _controllerbuttonmap[button].previous) end
 
 -- return boolean true if button state is pressed
-function controllerbuttonispressed(button) return _controllerbuttonmap[button+1].state end
+function controllerbuttonispressed(button) return _controllerbuttonmap[button].state end
 
 -- return time (in frame) when button state change. reference (zero) is programme start.
-function controllergetstatechangetime(button) return _controllerbuttonmap[button+1].time end
+function controllergetstatechangetime(button) return _controllerbuttonmap[button].time end
 
 -- return last button event code
 function controllergetlast()
-	local last = 1
-	local lasttime = 0
-	for i = 1, 6 do
+	local last, lasttime = 1, 0
+	for i = 1, 7 do
 		if(_controllerbuttonmap[i].time > lasttime) then
 			lasttime = _controllerbuttonmap[i].time
 			last = i
 		end
 	end
-	return last-1
+	return last
 end
-
 
 
 -- ************************************************************************ utils functions ************************************************************************
 function newanimation(start, frames, time)
-	local dummyanim = {
+	return {
 		start = start,
 		frames = frames,
 		time = time
 	}
-	return dummyanim
 end
 
-function newunit(x, y, w, h, type, idleanimation)
+function newunit(x, y, type, idleanimation, width, height)
+	width, height = width or 1, height or 1
+
 	local unit = {
 		positionx = x,									-- unit position on x axis
 		positiony = y, 									-- unit position on x axis
 		speedx = 0,										-- unit speed on x axis (could be positif or negatif)
 		speedy = 0,										-- unit speed on y axis (could be positif or negatif)
-		sizex = w, 										-- unit size on y axis (scale is in tile (8 pixel))
-		sizey = h, 										-- unit size on y axis (scale is in tile (8 pixel))
+		sizex = width, 									-- unit size on y axis (scale is in tile (8 pixel))
+		sizey = height, 								-- unit size on y axis (scale is in tile (8 pixel))
 
 		direction = 1,									-- unit direction. default is 1. if you want to flip unit on x axis direction is equals to -1
 		gravityafected = true,							-- define if unit is afected by gravity
@@ -1749,10 +1594,7 @@ function newunit(x, y, w, h, type, idleanimation)
 	return unit
 end
 
-function checkflag(x, y, flag)
-	if (fget(mget(flr(x/8),flr(y/8)), flag)) return true
-	return false
-end
+function checkflag(x, y, flag) return fget(mget(flr(x/8),flr(y/8)), flag) end
 
 function destroy(x, y)
 	local particle = initializeparticule(8*flr(x/8), 8*flr(y/8), newanimation(205,2,5), 10)
@@ -1769,8 +1611,7 @@ end
 
 function inroom(x, y, room)
 	local tmp = rooms[room]
-	if (mid(x, tmp[1], tmp[1] + tmp[3]) == x) and (mid(y, tmp[2], tmp[2] + tmp[4]) == y) then
-		return true
+	if (mid(x, tmp[1], tmp[1] + tmp[3]) == x) and (mid(y, tmp[2], tmp[2] + tmp[4]) == y) then return true
 	else return false end
 end
 
